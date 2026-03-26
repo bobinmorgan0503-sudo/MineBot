@@ -4,6 +4,8 @@ MineBot is a Mineflayer-based Minecraft bot project for repetitive server tasks.
 
 Current built-in features:
 
+- Auto fish
+- Anti AFK
 - Auto sieve
 - Auto dig
 - Multi-account startup scripts
@@ -76,19 +78,48 @@ start_muck.cmd 127.0.0.1 25565
 
 These commands are handled by MineBot locally:
 
-- `/sieve start`
-- `/sieve stop`
-- `/dig start`
-- `/dig stop`
+- `/autofish start`
+- `/autofish stop`
+- `/autoafk start`
+- `/autoafk stop`
+- `/autosieve start`
+- `/autosieve stop`
+- `/autodig start`
+- `/autodig stop`
 - `/quit`
 
 Any other `/...` command is sent to the Minecraft server normally.
 
 ## Features
 
+### Auto Fish
+
+The auto fish module is implemented in [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js).
+
+Behavior:
+
+- Equips a fishing rod from inventory automatically
+- Uses Mineflayer's fishing cycle
+- Reels in on stop when a nearby bobber is detected
+- Supports optional delayed auto-start
+
+Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoFishConfig`.
+
+### Anti AFK
+
+The anti AFK module is implemented in [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js).
+
+Behavior:
+
+- Periodically takes a tiny random step and returns
+- Uses direct control states, not pathfinding
+- Can be enabled by config or local command
+
+Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `antiAfkConfig`.
+
 ### Auto Sieve
 
-The sieve module is implemented in [features/sieve.js](/F:/Code/mineflyer/auto_SieveOre/features/sieve.js).
+The sieve module is implemented in [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js).
 
 Behavior:
 
@@ -96,11 +127,11 @@ Behavior:
 - Runs in a loop
 - Current loop interval is `100ms`, which is about 2 ticks
 
-Related config is in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js) under `sieveConfig`.
+Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `sieveConfig`.
 
 ### Auto Dig
 
-The auto dig module is implemented in [features/autoDig.js](/F:/Code/mineflyer/auto_SieveOre/features/autoDig.js).
+The auto dig module is implemented in [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js).
 
 Behavior:
 
@@ -110,7 +141,7 @@ Behavior:
 - Does not use Mineflayer pathing or distance checks
 - Iterates all configured dig positions each cycle
 
-Related config is in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js) under `autoDigConfig`.
+Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoDigConfig`.
 
 ## Configuration
 
@@ -123,21 +154,25 @@ Important sections:
 - `serverConfig`: default host, port, version, username, auth
 - `protocolConfig`: protocol workarounds for server packet compatibility
 - `timingConfig`: login and home delays
+- `autoFishConfig`: auto fishing behavior
+- `antiAfkConfig`: anti idle movement behavior
 - `sieveConfig`: auto sieve positions and timing
 - `autoDigConfig`: auto dig behavior and target positions
 
 ## Project Structure
 
-- [index.js](/F:/Code/mineflyer/auto_SieveOre/index.js): entry point, bot setup, CLI args, terminal commands
-- [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js): project configuration
-- [features/sieve.js](/F:/Code/mineflyer/auto_SieveOre/features/sieve.js): sieve feature module
-- [features/autoDig.js](/F:/Code/mineflyer/auto_SieveOre/features/autoDig.js): auto dig feature module
-- [start_bot.cmd](/F:/Code/mineflyer/auto_SieveOre/start_bot.cmd): generic Windows startup script
-- [start_Arthas.cmd](/F:/Code/mineflyer/auto_SieveOre/start_Arthas.cmd): Arthas startup script
-- [start_muck.cmd](/F:/Code/mineflyer/auto_SieveOre/start_muck.cmd): muck startup script
+- [index.js](/F:/Code/mineflyer/MineBot/index.js): entry point, bot setup, CLI args, terminal commands
+- [config.js](/F:/Code/mineflyer/MineBot/config.js): project configuration
+- [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js): auto fish feature module
+- [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js): anti AFK feature module
+- [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js): sieve feature module
+- [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js): auto dig feature module
+- [start_bot.cmd](/F:/Code/mineflyer/MineBot/start_bot.cmd): generic Windows startup script
+- [start_Arthas.cmd](/F:/Code/mineflyer/MineBot/start_Arthas.cmd): Arthas startup script
+- [start_muck.cmd](/F:/Code/mineflyer/MineBot/start_muck.cmd): muck startup script
 
 ## Notes
 
 - Chat is printed to the console by default.
 - The bot currently auto-sends `/login cui159478` and `/home home` after spawn.
-- If your server version changes, update `serverConfig.version` in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js).
+- If your server version changes, update `serverConfig.version` in [config.js](/F:/Code/mineflyer/MineBot/config.js).

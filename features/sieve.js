@@ -230,12 +230,12 @@ function createSieveFeature({
   async function handleCommand(message) {
     const normalized = message.toLowerCase()
 
-    if (normalized === '/sieve start') {
+    if (normalized === '/autosieve start' || normalized === '/sieve start') {
       startSieve()
       return true
     }
 
-    if (normalized === '/sieve stop') {
+    if (normalized === '/autosieve stop' || normalized === '/sieve stop') {
       await stopSieve()
       return true
     }
@@ -251,8 +251,8 @@ function createSieveFeature({
 
   function getCommandHelp() {
     return [
-      'Local command: /sieve start',
-      'Local command: /sieve stop',
+      'Local command: /autosieve start',
+      'Local command: /autosieve stop',
       'Local command: /useblock [x,y,z]'
     ]
   }

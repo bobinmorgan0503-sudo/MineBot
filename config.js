@@ -73,8 +73,28 @@ const autoDigConfig = {
   lookAtMaxDistance: 5
 }
 
+const autoFishConfig = {
+  enabled: true,
+  autoStartDelayMs: -1,
+  startDelayMs: 3000,
+  cycleDelayMs: 600,
+  retryDelayMs: 2000,
+  bobberDistance: 48
+}
+
+const antiAfkConfig = {
+  enabled: false,
+  intervalMs: 30000,
+  radius: 0.1,
+  reachTolerance: 0.03,
+  maxTicks: 60,
+  stepPauseMs: 100
+}
+
 module.exports = {
+  antiAfkConfig,
   autoDigConfig,
+  autoFishConfig,
   protocolConfig,
   serverConfig,
   sieveConfig,

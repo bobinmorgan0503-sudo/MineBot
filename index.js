@@ -1,7 +1,17 @@
 const readline = require('readline')
 const mineflayer = require('mineflayer')
-const { autoDigConfig, protocolConfig, serverConfig, sieveConfig, timingConfig } = require('./config')
+const {
+  antiAfkConfig,
+  autoDigConfig,
+  autoFishConfig,
+  protocolConfig,
+  serverConfig,
+  sieveConfig,
+  timingConfig
+} = require('./config')
+const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoDigFeature } = require('./features/autoDig')
+const { createAutoFishFeature } = require('./features/autoFish')
 const { createSieveFeature } = require('./features/sieve')
 
 function getCliOptions(argv) {
@@ -129,9 +139,21 @@ function sleep(ms) {
 }
 
 const features = [
+  createAntiAfkFeature({
+    bot,
+    config: antiAfkConfig,
+    logInfo,
+    sleep
+  }),
   createAutoDigFeature({
     bot,
     config: autoDigConfig,
+    logInfo,
+    sleep
+  }),
+  createAutoFishFeature({
+    bot,
+    config: autoFishConfig,
     logInfo,
     sleep
   }),

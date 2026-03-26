@@ -200,12 +200,12 @@ function createAutoDigFeature({
   async function handleCommand(message) {
     const normalized = message.toLowerCase()
 
-    if (normalized === '/dig start') {
+    if (normalized === '/autodig start' || normalized === '/dig start') {
       startAutoDig()
       return true
     }
 
-    if (normalized === '/dig stop') {
+    if (normalized === '/autodig stop' || normalized === '/dig stop') {
       await stopAutoDig()
       return true
     }
@@ -215,8 +215,8 @@ function createAutoDigFeature({
 
   function getCommandHelp() {
     return [
-      'Local command: /dig start',
-      'Local command: /dig stop'
+      'Local command: /autodig start',
+      'Local command: /autodig stop'
     ]
   }
 
