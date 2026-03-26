@@ -1,0 +1,8 @@
+node_modules/
+
+runlog.txt
+runerr.txt
+main_runlog.txt
+main_runerr.txt
+
+*.log
