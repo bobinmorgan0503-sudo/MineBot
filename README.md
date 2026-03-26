@@ -1,0 +1,143 @@
+# MineBot
+
+MineBot is a Mineflayer-based Minecraft bot project for repetitive server tasks.
+
+Current built-in features:
+
+- Auto sieve
+- Auto dig
+- Multi-account startup scripts
+- Runtime username / host / port overrides from command line
+
+## Requirements
+
+- Node.js 18+
+- npm
+- Windows `cmd` scripts are included for quick startup
+
+## Install
+
+```powershell
+npm install
+```
+
+## Start
+
+Use the default config:
+
+```powershell
+npm start
+```
+
+Pass username, host, and port from the command line:
+
+```powershell
+npm start -- Arthas azrxjh.cn 25568
+```
+
+Or use explicit flags:
+
+```powershell
+npm start -- --username Arthas --host azrxjh.cn --port 25568
+```
+
+You can also start directly with Node:
+
+```powershell
+node index.js Arthas azrxjh.cn 25568
+```
+
+## Windows Startup Scripts
+
+General script:
+
+- `start_bot.cmd <username> <host> <port>`
+
+Examples:
+
+```cmd
+start_bot.cmd Arthas azrxjh.cn 25568
+start_bot.cmd muck 127.0.0.1 25565
+```
+
+Fixed-account scripts:
+
+- `start_Arthas.cmd`
+- `start_muck.cmd`
+
+These also support optional host and port arguments:
+
+```cmd
+start_Arthas.cmd azrxjh.cn 25568
+start_muck.cmd 127.0.0.1 25565
+```
+
+## Local Commands
+
+These commands are handled by MineBot locally:
+
+- `/sieve start`
+- `/sieve stop`
+- `/dig start`
+- `/dig stop`
+- `/quit`
+
+Any other `/...` command is sent to the Minecraft server normally.
+
+## Features
+
+### Auto Sieve
+
+The sieve module is implemented in [features/sieve.js](/F:/Code/mineflyer/auto_SieveOre/features/sieve.js).
+
+Behavior:
+
+- Interacts with configured gravel container and target blocks
+- Runs in a loop
+- Current loop interval is `100ms`, which is about 2 ticks
+
+Related config is in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js) under `sieveConfig`.
+
+### Auto Dig
+
+The auto dig module is implemented in [features/autoDig.js](/F:/Code/mineflyer/auto_SieveOre/features/autoDig.js).
+
+Behavior:
+
+- Manual start only
+- Uses configured fixed positions
+- Sends digging packets directly
+- Does not use Mineflayer pathing or distance checks
+- Iterates all configured dig positions each cycle
+
+Related config is in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js) under `autoDigConfig`.
+
+## Configuration
+
+Main config file:
+
+- [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js)
+
+Important sections:
+
+- `serverConfig`: default host, port, version, username, auth
+- `protocolConfig`: protocol workarounds for server packet compatibility
+- `timingConfig`: login and home delays
+- `sieveConfig`: auto sieve positions and timing
+- `autoDigConfig`: auto dig behavior and target positions
+
+## Project Structure
+
+- [index.js](/F:/Code/mineflyer/auto_SieveOre/index.js): entry point, bot setup, CLI args, terminal commands
+- [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js): project configuration
+- [features/sieve.js](/F:/Code/mineflyer/auto_SieveOre/features/sieve.js): sieve feature module
+- [features/autoDig.js](/F:/Code/mineflyer/auto_SieveOre/features/autoDig.js): auto dig feature module
+- [start_bot.cmd](/F:/Code/mineflyer/auto_SieveOre/start_bot.cmd): generic Windows startup script
+- [start_Arthas.cmd](/F:/Code/mineflyer/auto_SieveOre/start_Arthas.cmd): Arthas startup script
+- [start_muck.cmd](/F:/Code/mineflyer/auto_SieveOre/start_muck.cmd): muck startup script
+
+## Notes
+
+- Chat is printed to the console by default.
+- The bot currently auto-sends `/login cui159478` and `/home home` after spawn.
+- If your server version changes, update `serverConfig.version` in [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js).
