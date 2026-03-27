@@ -97,7 +97,7 @@ const autoVerifyConfig = {
   debug: false,
   allowedActions: ['run_command', 'suggest_command'],
   requiredTextPatterns: [],
-  matchTexts: ['/verify', '/login', '/register'],
+  matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register'],
   dedupeWindowMs: 5000
 }
 
