@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3')
 const serverConfig = {
   host: 'azrxjh.cn',
   port: 25568,
-  version: '1.21.11',
+  version: '1.12.2',
   username: 'Arthas',
   auth: 'offline'
 }
@@ -37,9 +37,10 @@ const protocolConfig = {
 }
 
 const timingConfig = {
-  loginDelayMs: 2000,
-  homeDelayMs: 2000
+  perCommandDelayMs: 2000
 }
+
+const spawnCommands = []
 
 const sieveConfig = {
   tickDelayMs: 100,
@@ -91,12 +92,23 @@ const antiAfkConfig = {
   stepPauseMs: 100
 }
 
+const autoVerifyConfig = {
+  enabled: true,
+  debug: false,
+  allowedActions: ['run_command', 'suggest_command'],
+  requiredTextPatterns: [],
+  matchTexts: ['/verify', '/login', '/register'],
+  dedupeWindowMs: 5000
+}
+
 module.exports = {
   antiAfkConfig,
   autoDigConfig,
   autoFishConfig,
+  autoVerifyConfig,
   protocolConfig,
   serverConfig,
   sieveConfig,
+  spawnCommands,
   timingConfig
 }

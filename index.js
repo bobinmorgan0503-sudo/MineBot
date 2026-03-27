@@ -4,15 +4,18 @@ const {
   antiAfkConfig,
   autoDigConfig,
   autoFishConfig,
+  autoVerifyConfig,
   protocolConfig,
   serverConfig,
   sieveConfig,
+  spawnCommands,
   timingConfig
 } = require('./config')
 const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoDigFeature } = require('./features/autoDig')
 const { createAutoFishFeature } = require('./features/autoFish')
 const { createSieveFeature } = require('./features/sieve')
+const { createAutoVerifyFeature } = require('./features/autoVerify')
 
 function getCliOptions(argv) {
   const options = {}
@@ -138,6 +141,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function runSpawnCommands() {
+  const commands = Array.isArray(spawnCommands)
+    ? spawnCommands.map((command) => String(command).trim()).filter(Boolean)
+    : []
+
+  if (commands.length === 0) return
+
+  const perCommandDelayMs = Number(timingConfig.perCommandDelayMs || 1000)
+  for (const command of commands) {
+    await sleep(perCommandDelayMs)
+    bot.chat(command)
+    logInfo(`Sent: ${command}`)
+  }
+}
+
 const features = [
   createAntiAfkFeature({
     bot,
@@ -156,6 +174,11 @@ const features = [
     config: autoFishConfig,
     logInfo,
     sleep
+  }),
+  createAutoVerifyFeature({
+    bot,
+    config: autoVerifyConfig,
+    logInfo
   }),
   createSieveFeature({
     bot,
@@ -260,15 +283,9 @@ bot.once('spawn', () => {
     }
   }
 
-  setTimeout(() => {
-    bot.chat('/login cui159478')
-    logInfo('Sent: /login cui159478')
-
-    setTimeout(() => {
-      bot.chat('/home home')
-      logInfo('Sent: /home home')
-    }, timingConfig.homeDelayMs)
-  }, timingConfig.loginDelayMs)
+  void runSpawnCommands().catch((error) => {
+    console.error('Failed to run spawn commands:', error.message)
+  })
 })
 
 bot.on('connect', () => {
@@ -283,6 +300,12 @@ bot.on('login', () => {
 })
 
 bot.on('message', (message) => {
+  for (const feature of features) {
+    if (typeof feature.onMessage === 'function') {
+      feature.onMessage(message)
+    }
+  }
+
   if (!SHOW_CHAT_LOGS) return
 
   if (message && typeof message.toAnsi === 'function') {

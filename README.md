@@ -82,6 +82,10 @@ These commands are handled by MineBot locally:
 - `/autofish stop`
 - `/autoafk start`
 - `/autoafk stop`
+- `/autoverify start`
+- `/autoverify stop`
+- `/autoverify debug on`
+- `/autoverify debug off`
 - `/autosieve start`
 - `/autosieve stop`
 - `/autodig start`
@@ -116,6 +120,19 @@ Behavior:
 - Can be enabled by config or local command
 
 Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `antiAfkConfig`.
+
+### Auto Verify
+
+The auto verify module is implemented in [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js).
+
+Behavior:
+
+- Scans chat components for clickable `run_command` or `suggest_command` actions
+- Filters by visible verification text and command keywords
+- Executes matching verification commands automatically
+- Supports debug logging for raw click event inspection
+
+Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoVerifyConfig`.
 
 ### Auto Sieve
 
@@ -153,9 +170,11 @@ Important sections:
 
 - `serverConfig`: default host, port, version, username, auth
 - `protocolConfig`: protocol workarounds for server packet compatibility
-- `timingConfig`: login and home delays
+- `timingConfig`: delay between configured spawn commands
+- `spawnCommands`: commands sent after spawn
 - `autoFishConfig`: auto fishing behavior
 - `antiAfkConfig`: anti idle movement behavior
+- `autoVerifyConfig`: clickable chat verification behavior
 - `sieveConfig`: auto sieve positions and timing
 - `autoDigConfig`: auto dig behavior and target positions
 
@@ -165,6 +184,7 @@ Important sections:
 - [config.js](/F:/Code/mineflyer/MineBot/config.js): project configuration
 - [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js): auto fish feature module
 - [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js): anti AFK feature module
+- [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js): auto verify feature module
 - [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js): sieve feature module
 - [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js): auto dig feature module
 - [start_bot.cmd](/F:/Code/mineflyer/MineBot/start_bot.cmd): generic Windows startup script
@@ -174,5 +194,5 @@ Important sections:
 ## Notes
 
 - Chat is printed to the console by default.
-- The bot currently auto-sends `/login cui159478` and `/home home` after spawn.
+- The bot can auto-send configured `spawnCommands` after spawn.
 - If your server version changes, update `serverConfig.version` in [config.js](/F:/Code/mineflyer/MineBot/config.js).
