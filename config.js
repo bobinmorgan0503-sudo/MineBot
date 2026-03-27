@@ -40,7 +40,10 @@ const timingConfig = {
   perCommandDelayMs: 2000
 }
 
-const spawnCommands = []
+const spawnCommands = [
+  '/login qweasd123',
+  '/home home'
+]
 
 const sieveConfig = {
   tickDelayMs: 100,

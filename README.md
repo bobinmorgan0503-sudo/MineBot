@@ -1,82 +1,79 @@
 # MineBot
 
-MineBot is a Mineflayer-based Minecraft bot project for repetitive server tasks.
+MineBot 是一个基于 `mineflayer` 的 Minecraft 机器人项目，用来处理重复性的挂机与自动化操作。
 
-Current built-in features:
+当前项目已经集成了以下功能：
 
-- Auto fish
-- Anti AFK
-- Auto sieve
-- Auto dig
-- Multi-account startup scripts
-- Runtime username / host / port overrides from command line
+- 自动钓鱼
+- 反挂机
+- 自动聊天点击验证
+- 自动筛矿
+- 自动挖掘
+- 多账号启动脚本
+- 运行时通过命令行覆盖账号、地址、端口、版本
 
-## Requirements
+## 环境要求
 
-- Node.js 18+
+- Node.js 18 及以上
 - npm
-- Windows `cmd` scripts are included for quick startup
+- Windows 下可直接使用仓库内置的 `.cmd` 启动脚本
 
-## Install
+## 安装
 
 ```powershell
 npm install
 ```
 
-## Start
+## 启动方式
 
-Use the default config:
+使用默认配置启动：
 
 ```powershell
 npm start
 ```
 
-Pass username, host, and port from the command line:
+通过位置参数覆盖 `用户名 / 地址 / 端口 / 版本`：
 
 ```powershell
-npm start -- Arthas azrxjh.cn 25568
+npm start -- MrBobin 180.141.249.246 25565 1.20.4
 ```
 
-Or use explicit flags:
+通过显式参数启动：
 
 ```powershell
-npm start -- --username Arthas --host azrxjh.cn --port 25568
+npm start -- --username MrBobin --host 180.141.249.246 --port 25565 --version 1.20.4
 ```
 
-You can also start directly with Node:
+直接使用 Node 启动：
 
 ```powershell
-node index.js Arthas azrxjh.cn 25568
+node index.js MrBobin 180.141.249.246 25565 1.20.4
 ```
 
-## Windows Startup Scripts
+## Windows 启动脚本
 
-General script:
+通用脚本：
 
-- `start_bot.cmd <username> <host> <port>`
+- `start_bot.cmd <username> <host> <port> <version>`
 
-Examples:
+示例：
 
 ```cmd
-start_bot.cmd Arthas azrxjh.cn 25568
-start_bot.cmd muck 127.0.0.1 25565
+start_bot.cmd MrBobin 180.141.249.246 25565 1.20.4
+start_bot.cmd muck 127.0.0.1 25565 1.20.4
 ```
 
-Fixed-account scripts:
+固定账号脚本：
 
-- `start_Arthas.cmd`
-- `start_muck.cmd`
+- `start_Arthas.cmd [host] [port] [version]`
+- `start_muck.cmd [host] [port] [version]`
+- `start_MrBobin.cmd [host] [port] [version]`
 
-These also support optional host and port arguments:
+这些脚本默认版本都是 `1.20.4`，如果不传版本会自动补上。
 
-```cmd
-start_Arthas.cmd azrxjh.cn 25568
-start_muck.cmd 127.0.0.1 25565
-```
+## 本地命令
 
-## Local Commands
-
-These commands are handled by MineBot locally:
+以下命令只在当前终端内由 MineBot 本地处理，不会直接发到服务器：
 
 - `/autofish start`
 - `/autofish stop`
@@ -92,107 +89,128 @@ These commands are handled by MineBot locally:
 - `/autodig stop`
 - `/quit`
 
-Any other `/...` command is sent to the Minecraft server normally.
+其他输入内容会按普通聊天消息发送到服务器。
 
-## Features
+## 功能说明
 
-### Auto Fish
+### 自动登录与进服命令
 
-The auto fish module is implemented in [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js).
+进服后自动执行的命令由 [config.js](/F:/Code/mineflyer/MineBot/config.js) 里的 `spawnCommands` 控制。
 
-Behavior:
+当前配置为：
 
-- Equips a fishing rod from inventory automatically
-- Uses Mineflayer's fishing cycle
-- Reels in on stop when a nearby bobber is detected
-- Supports optional delayed auto-start
+```js
+const spawnCommands = [
+  '/login qweasd123',
+  '/home home'
+]
+```
 
-Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoFishConfig`.
+MineBot 会在 `spawn` 之后按顺序执行这些命令，间隔时间由 `timingConfig.perCommandDelayMs` 控制。
 
-### Anti AFK
+### 自动钓鱼
 
-The anti AFK module is implemented in [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js).
+实现文件： [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js)
 
-Behavior:
+功能：
 
-- Periodically takes a tiny random step and returns
-- Uses direct control states, not pathfinding
-- Can be enabled by config or local command
+- 自动从背包寻找鱼竿并装备
+- 调用 Mineflayer 的钓鱼循环
+- 停止时尝试自动收杆
+- 支持延迟自动启动
 
-Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `antiAfkConfig`.
+相关配置：`autoFishConfig`
 
-### Auto Verify
+### 反挂机
 
-The auto verify module is implemented in [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js).
+实现文件： [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js)
 
-Behavior:
+功能：
 
-- Scans chat components for clickable `run_command` or `suggest_command` actions
-- Filters by visible verification text and command keywords
-- Executes matching verification commands automatically
-- Supports debug logging for raw click event inspection
+- 周期性随机小范围移动
+- 走出去再返回原地
+- 不依赖寻路系统
 
-Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoVerifyConfig`.
+相关配置：`antiAfkConfig`
 
-### Auto Sieve
+### 自动聊天点击验证
 
-The sieve module is implemented in [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js).
+实现文件： [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js)
 
-Behavior:
+功能：
 
-- Interacts with configured gravel container and target blocks
-- Runs in a loop
-- Current loop interval is `100ms`, which is about 2 ticks
+- 监听聊天消息中的 `clickEvent`
+- 自动识别 `run_command` 与 `suggest_command`
+- 自动执行验证相关命令
+- 支持调试输出
 
-Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `sieveConfig`.
+当前默认会匹配以下验证命令前缀：
 
-### Auto Dig
+```js
+matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
+```
 
-The auto dig module is implemented in [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js).
+相关配置：`autoVerifyConfig`
 
-Behavior:
+### 自动筛矿
 
-- Manual start only
-- Uses configured fixed positions
-- Sends digging packets directly
-- Does not use Mineflayer pathing or distance checks
-- Iterates all configured dig positions each cycle
+实现文件： [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js)
 
-Related config is in [config.js](/F:/Code/mineflyer/MineBot/config.js) under `autoDigConfig`.
+功能：
 
-## Configuration
+- 打开指定容器拿取材料
+- 按固定顺序点击指定方块
+- 按循环持续执行
 
-Main config file:
+相关配置：`sieveConfig`
 
-- [config.js](/F:/Code/mineflyer/auto_SieveOre/config.js)
+### 自动挖掘
 
-Important sections:
+实现文件： [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js)
 
-- `serverConfig`: default host, port, version, username, auth
-- `protocolConfig`: protocol workarounds for server packet compatibility
-- `timingConfig`: delay between configured spawn commands
-- `spawnCommands`: commands sent after spawn
-- `autoFishConfig`: auto fishing behavior
-- `antiAfkConfig`: anti idle movement behavior
-- `autoVerifyConfig`: clickable chat verification behavior
-- `sieveConfig`: auto sieve positions and timing
-- `autoDigConfig`: auto dig behavior and target positions
+功能：
 
-## Project Structure
+- 按固定坐标列表轮询方块
+- 直接发送挖掘协议包
+- 支持黑名单 / 白名单模式
+- 不依赖寻路
 
-- [index.js](/F:/Code/mineflyer/MineBot/index.js): entry point, bot setup, CLI args, terminal commands
-- [config.js](/F:/Code/mineflyer/MineBot/config.js): project configuration
-- [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js): auto fish feature module
-- [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js): anti AFK feature module
-- [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js): auto verify feature module
-- [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js): sieve feature module
-- [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js): auto dig feature module
-- [start_bot.cmd](/F:/Code/mineflyer/MineBot/start_bot.cmd): generic Windows startup script
-- [start_Arthas.cmd](/F:/Code/mineflyer/MineBot/start_Arthas.cmd): Arthas startup script
-- [start_muck.cmd](/F:/Code/mineflyer/MineBot/start_muck.cmd): muck startup script
+相关配置：`autoDigConfig`
 
-## Notes
+## 配置说明
 
-- Chat is printed to the console by default.
-- The bot can auto-send configured `spawnCommands` after spawn.
-- If your server version changes, update `serverConfig.version` in [config.js](/F:/Code/mineflyer/MineBot/config.js).
+主配置文件：
+
+- [config.js](/F:/Code/mineflyer/MineBot/config.js)
+
+重要配置项：
+
+- `serverConfig`：默认服务器地址、端口、版本、用户名、登录方式
+- `protocolConfig`：协议兼容补丁
+- `timingConfig`：进服后自动命令的发送间隔
+- `spawnCommands`：进服后自动执行的命令列表
+- `autoFishConfig`：自动钓鱼配置
+- `antiAfkConfig`：反挂机配置
+- `autoVerifyConfig`：自动聊天验证配置
+- `sieveConfig`：自动筛矿配置
+- `autoDigConfig`：自动挖掘配置
+
+## 项目结构
+
+- [index.js](/F:/Code/mineflyer/MineBot/index.js)：程序入口，负责连接、命令行参数解析、本地命令分发、聊天输出
+- [config.js](/F:/Code/mineflyer/MineBot/config.js)：项目配置
+- [features/autoFish.js](/F:/Code/mineflyer/MineBot/features/autoFish.js)：自动钓鱼模块
+- [features/antiAfk.js](/F:/Code/mineflyer/MineBot/features/antiAfk.js)：反挂机模块
+- [features/autoVerify.js](/F:/Code/mineflyer/MineBot/features/autoVerify.js)：自动聊天验证模块
+- [features/sieve.js](/F:/Code/mineflyer/MineBot/features/sieve.js)：自动筛矿模块
+- [features/autoDig.js](/F:/Code/mineflyer/MineBot/features/autoDig.js)：自动挖掘模块
+- [start_bot.cmd](/F:/Code/mineflyer/MineBot/start_bot.cmd)：通用启动脚本
+- [start_Arthas.cmd](/F:/Code/mineflyer/MineBot/start_Arthas.cmd)：Arthas 启动脚本
+- [start_muck.cmd](/F:/Code/mineflyer/MineBot/start_muck.cmd)：muck 启动脚本
+- [start_MrBobin.cmd](/F:/Code/mineflyer/MineBot/start_MrBobin.cmd)：MrBobin 启动脚本
+
+## 说明
+
+- 控制台默认会输出聊天信息。
+- 如果服务器版本不同，可以通过命令行参数覆盖 `version`，也可以修改 [config.js](/F:/Code/mineflyer/MineBot/config.js) 中的 `serverConfig.version`。
+- 如果需要查看聊天点击验证的原始信息，可以使用 `/autoverify debug on`。

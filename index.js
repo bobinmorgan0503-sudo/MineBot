@@ -66,6 +66,20 @@ function getCliOptions(argv) {
       continue
     }
 
+    if (arg === '--version' || arg === '-v') {
+      const value = argv[index + 1]
+      if (value) {
+        options.version = value
+        index += 1
+      }
+      continue
+    }
+
+    if (arg.startsWith('--version=')) {
+      options.version = arg.slice('--version='.length)
+      continue
+    }
+
     if (!arg.startsWith('-')) {
       positional.push(arg)
     }
@@ -74,6 +88,7 @@ function getCliOptions(argv) {
   if (!options.username && positional[0]) options.username = positional[0]
   if (!options.host && positional[1]) options.host = positional[1]
   if (options.port == null && positional[2]) options.port = Number.parseInt(positional[2], 10)
+  if (!options.version && positional[3]) options.version = positional[3]
 
   return options
 }
@@ -83,7 +98,8 @@ const runtimeServerConfig = {
   ...serverConfig,
   host: cliOptions.host || serverConfig.host,
   port: Number.isFinite(cliOptions.port) ? cliOptions.port : serverConfig.port,
-  username: cliOptions.username || serverConfig.username
+  username: cliOptions.username || serverConfig.username,
+  version: cliOptions.version || serverConfig.version
 }
 
 const bot = mineflayer.createBot({
