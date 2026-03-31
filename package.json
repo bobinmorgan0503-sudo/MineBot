@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "mineflayer": "^4.35.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "socks": "^2.8.7",
     "vec3": "^0.1.10"
   }
 }

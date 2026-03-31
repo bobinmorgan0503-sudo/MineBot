@@ -41,7 +41,7 @@ const timingConfig = {
 }
 
 const spawnCommands = [
-  '/login qweasd123',
+  '/login cui159478',
   '/home home'
 ]
 
@@ -104,10 +104,28 @@ const autoVerifyConfig = {
   dedupeWindowMs: 5000
 }
 
+const autoMineConfig = {
+  enabled: false,
+  autoStartDelayMs: -1,
+  targetBlocks: ['diamond_ore', 'deepslate_diamond_ore'],
+  searchRange: 100,
+  searchCount: 64,
+  retryDelayMs: 1200,
+  idleDelayMs: 2000,
+  collectDelayMs: 300,
+  unsafeBlocks: ['lava', 'flowing_lava', 'fire'],
+  navigation: {
+    canDig: true,
+    allow1by1towers: true,
+    allowParkour: false
+  }
+}
+
 module.exports = {
   antiAfkConfig,
   autoDigConfig,
   autoFishConfig,
+  autoMineConfig,
   autoVerifyConfig,
   protocolConfig,
   serverConfig,

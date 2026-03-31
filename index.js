@@ -1,9 +1,16 @@
 const readline = require('readline')
 const mineflayer = require('mineflayer')
+const { SocksClient } = require('socks')
+const {
+  pathfinder,
+  Movements,
+  goals: { GoalBlock, GoalGetToBlock }
+} = require('mineflayer-pathfinder')
 const {
   antiAfkConfig,
   autoDigConfig,
   autoFishConfig,
+  autoMineConfig,
   autoVerifyConfig,
   protocolConfig,
   serverConfig,
@@ -14,6 +21,8 @@ const {
 const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoDigFeature } = require('./features/autoDig')
 const { createAutoFishFeature } = require('./features/autoFish')
+const { createAutoMineFeature } = require('./features/autoMine')
+const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
 const { createAutoVerifyFeature } = require('./features/autoVerify')
 
@@ -80,6 +89,62 @@ function getCliOptions(argv) {
       continue
     }
 
+    if (arg === '--proxy-host') {
+      const value = argv[index + 1]
+      if (value) {
+        options.proxyHost = value
+        index += 1
+      }
+      continue
+    }
+
+    if (arg.startsWith('--proxy-host=')) {
+      options.proxyHost = arg.slice('--proxy-host='.length)
+      continue
+    }
+
+    if (arg === '--proxy-port') {
+      const value = argv[index + 1]
+      if (value) {
+        options.proxyPort = Number.parseInt(value, 10)
+        index += 1
+      }
+      continue
+    }
+
+    if (arg.startsWith('--proxy-port=')) {
+      options.proxyPort = Number.parseInt(arg.slice('--proxy-port='.length), 10)
+      continue
+    }
+
+    if (arg === '--proxy-username') {
+      const value = argv[index + 1]
+      if (value) {
+        options.proxyUsername = value
+        index += 1
+      }
+      continue
+    }
+
+    if (arg.startsWith('--proxy-username=')) {
+      options.proxyUsername = arg.slice('--proxy-username='.length)
+      continue
+    }
+
+    if (arg === '--proxy-password') {
+      const value = argv[index + 1]
+      if (value) {
+        options.proxyPassword = value
+        index += 1
+      }
+      continue
+    }
+
+    if (arg.startsWith('--proxy-password=')) {
+      options.proxyPassword = arg.slice('--proxy-password='.length)
+      continue
+    }
+
     if (!arg.startsWith('-')) {
       positional.push(arg)
     }
@@ -89,6 +154,10 @@ function getCliOptions(argv) {
   if (!options.host && positional[1]) options.host = positional[1]
   if (options.port == null && positional[2]) options.port = Number.parseInt(positional[2], 10)
   if (!options.version && positional[3]) options.version = positional[3]
+  if (!options.proxyHost && positional[4]) options.proxyHost = positional[4]
+  if (options.proxyPort == null && positional[5]) options.proxyPort = Number.parseInt(positional[5], 10)
+  if (!options.proxyUsername && positional[6]) options.proxyUsername = positional[6]
+  if (!options.proxyPassword && positional[7]) options.proxyPassword = positional[7]
 
   return options
 }
@@ -101,15 +170,63 @@ const runtimeServerConfig = {
   username: cliOptions.username || serverConfig.username,
   version: cliOptions.version || serverConfig.version
 }
+const runtimeProxyConfig = {
+  host: cliOptions.proxyHost || '',
+  port: Number.isFinite(cliOptions.proxyPort) ? cliOptions.proxyPort : null,
+  username: cliOptions.proxyUsername || '',
+  password: cliOptions.proxyPassword || ''
+}
+const proxyRequested = [
+  cliOptions.proxyHost,
+  cliOptions.proxyPort,
+  cliOptions.proxyUsername,
+  cliOptions.proxyPassword
+].some((value) => value != null && value !== '')
+const proxyEnabled = Boolean(runtimeProxyConfig.host && Number.isFinite(runtimeProxyConfig.port))
 
-const bot = mineflayer.createBot({
-  host: runtimeServerConfig.host,
-  port: runtimeServerConfig.port,
+if (proxyRequested && !proxyEnabled) {
+  throw new Error('Proxy host and port are required when using proxy options.')
+}
+
+const botOptions = {
   username: runtimeServerConfig.username,
   auth: runtimeServerConfig.auth,
   version: runtimeServerConfig.version,
   customPackets: protocolConfig.customPackets
-})
+}
+
+if (proxyEnabled) {
+  botOptions.connect = (client) => {
+    SocksClient.createConnection({
+      proxy: {
+        host: runtimeProxyConfig.host,
+        port: runtimeProxyConfig.port,
+        type: 5,
+        userId: runtimeProxyConfig.username || undefined,
+        password: runtimeProxyConfig.password || undefined
+      },
+      command: 'connect',
+      destination: {
+        host: runtimeServerConfig.host,
+        port: runtimeServerConfig.port
+      }
+    }, (error, info) => {
+      if (error) {
+        client.emit('error', error)
+        return
+      }
+
+      client.setSocket(info.socket)
+      client.emit('connect')
+    })
+  }
+} else {
+  botOptions.host = runtimeServerConfig.host
+  botOptions.port = runtimeServerConfig.port
+}
+
+const bot = mineflayer.createBot(botOptions)
+bot.loadPlugin(pathfinder)
 
 if (bot._client) {
   bot._client.on('packet', (data, meta) => {
@@ -173,6 +290,12 @@ async function runSpawnCommands() {
 }
 
 const features = [
+  createGotoFeature({
+    bot,
+    GoalBlock,
+    Movements,
+    logInfo
+  }),
   createAntiAfkFeature({
     bot,
     config: antiAfkConfig,
@@ -188,6 +311,14 @@ const features = [
   createAutoFishFeature({
     bot,
     config: autoFishConfig,
+    logInfo,
+    sleep
+  }),
+  createAutoMineFeature({
+    bot,
+    config: autoMineConfig,
+    GoalGetToBlock,
+    Movements,
     logInfo,
     sleep
   }),
@@ -305,9 +436,12 @@ bot.once('spawn', () => {
 })
 
 bot.on('connect', () => {
+  const proxySuffix = proxyEnabled
+    ? ` via SOCKS5 ${runtimeProxyConfig.host}:${runtimeProxyConfig.port}`
+    : ''
   logInfo(
     `TCP connected as ${runtimeServerConfig.username} ` +
-    `to ${runtimeServerConfig.host}:${runtimeServerConfig.port}, waiting for login...`
+    `to ${runtimeServerConfig.host}:${runtimeServerConfig.port}${proxySuffix}, waiting for login...`
   )
 })
 
