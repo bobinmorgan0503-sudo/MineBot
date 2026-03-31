@@ -13,13 +13,32 @@ const partialPacketWorkaround = {
     toClient: {
       types: {
         // This server sends particle payloads that the current protocol stack
-        // cannot decode reliably. We do not use particle data, so skip it.
-        packet_world_particles: [
+        // cannot decode reliably. We do not use particle data, so redirect
+        // the packet to a custom raw-buffer type instead of overriding the
+        // original array definition in-place, because minecraft-protocol
+        // merges protocol arrays with lodash.merge.
+        packet_partial_world_particles: [
           'container',
           [
             {
               name: 'payload',
               type: 'restBuffer'
+            }
+          ]
+        ],
+        packet: [
+          'container',
+          [
+            {},
+            {
+              type: [
+                'switch',
+                {
+                  fields: {
+                    world_particles: 'packet_partial_world_particles'
+                  }
+                }
+              ]
             }
           ]
         ]
@@ -30,9 +49,10 @@ const partialPacketWorkaround = {
 
 const protocolConfig = {
   customPackets: {
-    '1.21': partialPacketWorkaround,
-    '1.21.9': partialPacketWorkaround,
-    '1.21.11': partialPacketWorkaround
+    // minecraft-protocol indexes customPackets by mcData.version.majorVersion,
+    // so keys here must be major versions like "1.12" or "1.21".
+    '1.12': partialPacketWorkaround,
+    '1.21': partialPacketWorkaround
   }
 }
 
@@ -121,8 +141,27 @@ const autoMineConfig = {
   }
 }
 
+const autoAttackConfig = {
+  enabled: false,
+  autoStartDelayMs: 0,
+  mode: 'multi',
+  priority: 'distance',
+  cooldownTime: {
+    custom: false,
+    value: 1.0
+  },
+  interaction: 'attack',
+  attackRange: 5.0,
+  attackHostile: true,
+  attackPassive: false,
+  listMode: 'blacklist',
+  entitiesList: ['Player'],
+  scanIntervalMs: 100
+}
+
 module.exports = {
   antiAfkConfig,
+  autoAttackConfig,
   autoDigConfig,
   autoFishConfig,
   autoMineConfig,

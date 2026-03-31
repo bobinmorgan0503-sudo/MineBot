@@ -1,17 +1,19 @@
 # MineBot
 
-MineBot 是一个基于 `mineflayer` 的 Minecraft 机器人项目，用来处理挂机、自动化操作和简单的导航/挖矿任务。
+MineBot 是一个基于 `mineflayer` 的 Minecraft 机器人项目，用于挂机、自动化操作、简单导航、挖矿、钓鱼和战斗辅助。
 
-当前项目已经集成了以下能力：
+当前已集成的能力：
 
 - `/goto` 坐标导航
 - 自动挖掘固定坐标方块
 - 自动挖矿
 - 自动钓鱼
+- 自动攻击
 - 反挂机
 - 自动点击聊天验证
 - 自动筛矿
-- 支持通过命令行覆盖服务器和代理参数
+- 支持通过命令行覆盖服务器与代理参数
+- 包含针对异常粒子包的兼容处理，避免 1.21.11 入服时因粒子解析异常掉线
 
 ## 环境要求
 
@@ -48,7 +50,7 @@ npm start -- --username MrBobin --host 180.141.249.246 --port 25565 --version 1.
 带 SOCKS5 代理启动：
 
 ```powershell
-npm start -- --username muck --host mc101.ytonidc.com --port 50305 --version 1.21.11 --proxy-host 49.232.133.49 --proxy-port 1080 --proxy-username minebot --proxy-password nCaLdWs0RiKEfBOfGhWG
+npm start -- --username muck --host mc101.ytonidc.com --port 50305 --version 1.21.11 --proxy-host 49.232.133.49 --proxy-port 1080 --proxy-username minebot --proxy-password your_password
 ```
 
 也可以直接使用 Node 启动：
@@ -69,12 +71,6 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 - `start_MrBobin.cmd [host] [port] [version]`
 - `start_muck.cmd [host] [port] [version] [proxy_host] [proxy_port] [proxy_username] [proxy_password]`
 
-`start_muck.cmd` 当前默认连接：
-
-- 服务器：`mc101.ytonidc.com:50305`
-- 版本：`1.21.11`
-- 代理：`49.232.133.49:1080`
-
 ## 本地命令
 
 以下命令只在本地终端里由 MineBot 处理，不会直接作为聊天消息发送到服务器：
@@ -88,6 +84,9 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 - `/automine status`
 - `/autofish start`
 - `/autofish stop`
+- `/autoattack start`
+- `/autoattack stop`
+- `/autoattack status`
 - `/autoafk start`
 - `/autoafk stop`
 - `/autoverify start`
@@ -99,7 +98,7 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 - `/useblock [x,y,z]`
 - `/quit`
 
-其他输入内容会按普通聊天消息发送到服务器。
+其他输入会按普通聊天消息发送到服务器。
 
 ## 功能说明
 
@@ -111,7 +110,6 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 
 - 使用 `mineflayer-pathfinder` 导航到指定坐标
 - 支持 `/goto stop` 中断当前路径
-- 使用共享导航配置
 
 ### 自动挖掘
 
@@ -121,8 +119,8 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 
 - 按固定坐标列表轮询方块
 - 直接发送挖掘协议包
-- 支持黑名单/白名单过滤
-- 不依赖 pathfinder
+- 支持黑名单 / 白名单过滤
+- 不依赖 `pathfinder`
 
 ### 自动挖矿
 
@@ -131,8 +129,8 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 功能：
 
 - 在指定半径内搜索目标矿物
-- 每轮只锁定一个目标，处理完成后再重新扫描
-- 通过 pathfinder 走到目标矿附近
+- 每轮只锁定一个目标，处理完成后重新扫描
+- 通过 `pathfinder` 走到目标矿附近
 - 使用协议包方式执行挖掘
 
 默认目标矿：
@@ -150,6 +148,41 @@ targetBlocks: ['diamond_ore', 'deepslate_diamond_ore']
 - 自动寻找并装备鱼竿
 - 循环执行钓鱼
 - 支持延迟自动启动
+
+### 自动攻击
+
+实现文件：`features/autoAttack.js`
+
+功能：
+
+- 支持 `single` 单目标和 `multi` 多目标模式
+- 支持按 `distance` 或 `health` 选择优先级
+- 支持 `attack`、`interact`、`interactAt` 三种交互模式
+- 支持敌对 / 被动生物过滤
+- 支持白名单 / 黑名单实体名列表
+- 支持自定义冷却，或根据实际攻速属性自动计算攻击间隔
+
+默认配置示例：
+
+```js
+const autoAttackConfig = {
+  enabled: false,
+  autoStartDelayMs: 0,
+  mode: 'single',
+  priority: 'distance',
+  cooldownTime: {
+    custom: false,
+    value: 1.0
+  },
+  interaction: 'attack',
+  attackRange: 4.0,
+  attackHostile: true,
+  attackPassive: false,
+  listMode: 'whitelist',
+  entitiesList: ['Zombie', 'Cow'],
+  scanIntervalMs: 100
+}
+```
 
 ### 反挂机
 
@@ -195,12 +228,13 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 重要配置项：
 
 - `serverConfig`：默认服务器地址、端口、版本、用户名、认证方式
-- `protocolConfig`：1.21.x 协议兼容补丁
+- `protocolConfig`：协议兼容补丁与异常粒子包绕过逻辑
 - `timingConfig`：进服后自动命令的发送间隔
 - `spawnCommands`：进服后自动执行的命令
 - `antiAfkConfig`
 - `autoDigConfig`
 - `autoFishConfig`
+- `autoAttackConfig`
 - `autoMineConfig`
 - `autoVerifyConfig`
 - `sieveConfig`
@@ -214,6 +248,7 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 - `features/autoDig.js`：自动挖掘
 - `features/autoMine.js`：自动挖矿
 - `features/autoFish.js`：自动钓鱼
+- `features/autoAttack.js`：自动攻击
 - `features/antiAfk.js`：反挂机
 - `features/autoVerify.js`：自动聊天验证
 - `features/sieve.js`：自动筛矿

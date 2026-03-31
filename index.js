@@ -8,6 +8,7 @@ const {
 } = require('mineflayer-pathfinder')
 const {
   antiAfkConfig,
+  autoAttackConfig,
   autoDigConfig,
   autoFishConfig,
   autoMineConfig,
@@ -19,6 +20,7 @@ const {
   timingConfig
 } = require('./config')
 const { createAntiAfkFeature } = require('./features/antiAfk')
+const { createAutoAttackFeature } = require('./features/autoAttack')
 const { createAutoDigFeature } = require('./features/autoDig')
 const { createAutoFishFeature } = require('./features/autoFish')
 const { createAutoMineFeature } = require('./features/autoMine')
@@ -192,7 +194,10 @@ const botOptions = {
   username: runtimeServerConfig.username,
   auth: runtimeServerConfig.auth,
   version: runtimeServerConfig.version,
-  customPackets: protocolConfig.customPackets
+  customPackets: protocolConfig.customPackets,
+  plugins: {
+    particle: false
+  }
 }
 
 if (proxyEnabled) {
@@ -227,6 +232,44 @@ if (proxyEnabled) {
 
 const bot = mineflayer.createBot(botOptions)
 bot.loadPlugin(pathfinder)
+
+function sanitizeWorldParticlesPacket(packet) {
+  if (!packet || typeof packet !== 'object') return
+
+  const usesUpdatedParticlesPacket = typeof bot.supportFeature === 'function' &&
+    bot.supportFeature('updatedParticlesPacket')
+
+  const looksMalformed = usesUpdatedParticlesPacket
+    ? !packet.particle || packet.particle.type == null
+    : packet.particleId == null
+
+  if (!looksMalformed) return
+
+  packet.longDistance ??= false
+  packet.alwaysShow ??= false
+  packet.x ??= 0
+  packet.y ??= 0
+  packet.z ??= 0
+  packet.offsetX ??= 0
+  packet.offsetY ??= 0
+  packet.offsetZ ??= 0
+  packet.velocityOffset ??= 0
+  packet.amount ??= 0
+  packet.particles ??= 0
+  packet.particleData ??= 0
+
+  if (usesUpdatedParticlesPacket) {
+    packet.particle ??= { type: '__ignored__', data: {} }
+    packet.particle.type ??= '__ignored__'
+    packet.particle.data ??= {}
+  } else {
+    packet.particleId ??= -1
+  }
+}
+
+if (bot._client) {
+  bot._client.prependListener('world_particles', sanitizeWorldParticlesPacket)
+}
 
 if (bot._client) {
   bot._client.on('packet', (data, meta) => {
@@ -299,6 +342,12 @@ const features = [
   createAntiAfkFeature({
     bot,
     config: antiAfkConfig,
+    logInfo,
+    sleep
+  }),
+  createAutoAttackFeature({
+    bot,
+    config: autoAttackConfig,
     logInfo,
     sleep
   }),
