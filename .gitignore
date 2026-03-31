@@ -6,3 +6,4 @@ main_runlog.txt
 main_runerr.txt
 
 *.log
+config-backups/

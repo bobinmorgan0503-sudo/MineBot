@@ -1,3 +1,5 @@
+const fs = require('fs')
+const path = require('path')
 const readline = require('readline')
 const mineflayer = require('mineflayer')
 const { SocksClient } = require('socks')
@@ -6,6 +8,59 @@ const {
   Movements,
   goals: { GoalBlock, GoalGetToBlock }
 } = require('mineflayer-pathfinder')
+const { createAntiAfkFeature } = require('./features/antiAfk')
+const { createAutoAttackFeature } = require('./features/autoAttack')
+const { createAutoDigFeature } = require('./features/autoDig')
+const { createAutoFishFeature } = require('./features/autoFish')
+const { createAutoMineFeature } = require('./features/autoMine')
+const { createGotoFeature } = require('./features/goto')
+const { createSieveFeature } = require('./features/sieve')
+const { createAutoVerifyFeature } = require('./features/autoVerify')
+
+const CONFIG_FILE_PATH = path.join(__dirname, 'config.js')
+const CONFIG_BACKUP_DIR = path.join(__dirname, 'config-backups')
+
+function formatBackupTimestamp(date = new Date()) {
+  const pad = (value, length = 2) => String(value).padStart(length, '0')
+
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    '-',
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+    '-',
+    pad(date.getMilliseconds(), 3)
+  ].join('')
+}
+
+function backupConfigFile() {
+  fs.mkdirSync(CONFIG_BACKUP_DIR, { recursive: true })
+
+  const latestBackupPath = path.join(CONFIG_BACKUP_DIR, 'config.latest.js')
+  const timestampedBackupPath = path.join(
+    CONFIG_BACKUP_DIR,
+    `config.${formatBackupTimestamp()}.js`
+  )
+
+  fs.copyFileSync(CONFIG_FILE_PATH, latestBackupPath)
+  fs.copyFileSync(CONFIG_FILE_PATH, timestampedBackupPath)
+}
+
+function loadRuntimeConfig() {
+  try {
+    const resolvedConfigPath = require.resolve(CONFIG_FILE_PATH)
+    delete require.cache[resolvedConfigPath]
+    const loadedConfig = require(resolvedConfigPath)
+    backupConfigFile()
+    return loadedConfig
+  } catch (error) {
+    throw new Error(`Failed to load and back up config.js: ${error.message}`)
+  }
+}
+
 const {
   antiAfkConfig,
   autoAttackConfig,
@@ -18,15 +73,7 @@ const {
   sieveConfig,
   spawnCommands,
   timingConfig
-} = require('./config')
-const { createAntiAfkFeature } = require('./features/antiAfk')
-const { createAutoAttackFeature } = require('./features/autoAttack')
-const { createAutoDigFeature } = require('./features/autoDig')
-const { createAutoFishFeature } = require('./features/autoFish')
-const { createAutoMineFeature } = require('./features/autoMine')
-const { createGotoFeature } = require('./features/goto')
-const { createSieveFeature } = require('./features/sieve')
-const { createAutoVerifyFeature } = require('./features/autoVerify')
+} = loadRuntimeConfig()
 
 function getCliOptions(argv) {
   const options = {}
