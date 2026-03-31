@@ -1,4 +1,4 @@
-const { Vec3 } = require('vec3')
+﻿const { Vec3 } = require('vec3')
 
 // 服务器连接配置。
 // 这些值可以被命令行参数覆盖，例如：
@@ -296,6 +296,28 @@ const antiAfkConfig = {
   stepPauseMs: 100
 }
 
+// 自动死亡返回配置。
+const autoBackConfig = {
+  // 是否启用自动 back。
+  // 可选值：true | false
+  enabled: true,
+
+  // 死亡后等待多久再点击重生。
+  // 可选值：任意 >= 0 的毫秒整数。
+  respawnDelayMs: 50,
+
+  // 重生后等待多久再发送返回命令。
+  // 可选值：任意 >= 0 的毫秒整数。
+  backDelayMs: 100,
+
+  // 重生后自动发送的命令。
+  // 可选值：任意非空字符串，例如：
+  // - '/back'
+  // - '/home home'
+  // - '/warp spawn'
+  backCommand: '/back'
+}
+
 // 自动聊天验证配置。
 const autoVerifyConfig = {
   // 是否启用自动验证。
@@ -468,6 +490,7 @@ const autoAttackConfig = {
 
 module.exports = {
   antiAfkConfig,
+  autoBackConfig,
   autoAttackConfig,
   autoDigConfig,
   autoFishConfig,

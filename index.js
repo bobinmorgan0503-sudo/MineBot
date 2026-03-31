@@ -2,12 +2,14 @@ const fs = require('fs')
 const path = require('path')
 const readline = require('readline')
 const mineflayer = require('mineflayer')
+const nbt = require('prismarine-nbt')
 const { SocksClient } = require('socks')
 const {
   pathfinder,
   Movements,
   goals: { GoalBlock, GoalGetToBlock }
 } = require('mineflayer-pathfinder')
+const { createAutoBackFeature } = require('./features/autoBack')
 const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoAttackFeature } = require('./features/autoAttack')
 const { createAutoDigFeature } = require('./features/autoDig')
@@ -63,6 +65,7 @@ function loadRuntimeConfig() {
 
 const {
   antiAfkConfig,
+  autoBackConfig,
   autoAttackConfig,
   autoDigConfig,
   autoFishConfig,
@@ -242,6 +245,7 @@ const botOptions = {
   auth: runtimeServerConfig.auth,
   version: runtimeServerConfig.version,
   customPackets: protocolConfig.customPackets,
+  respawn: false,
   plugins: {
     particle: false
   }
@@ -314,18 +318,194 @@ function sanitizeWorldParticlesPacket(packet) {
   }
 }
 
+function extractDialogText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => extractDialogText(entry)).filter(Boolean).join(' ')
+  }
+
+  if (typeof value !== 'object') return ''
+
+  const directKeys = ['text', 'contents', 'label', 'tooltip', 'title']
+  const fragments = []
+
+  for (const key of directKeys) {
+    if (value[key] != null) {
+      fragments.push(extractDialogText(value[key]))
+    }
+  }
+
+  return fragments.filter(Boolean).join(' ')
+}
+
+function simplifyNbtValue(value) {
+  if (!value || typeof value !== 'object') return value
+
+  const looksLikeNbt = Object.prototype.hasOwnProperty.call(value, 'type') &&
+    Object.prototype.hasOwnProperty.call(value, 'value')
+
+  if (!looksLikeNbt) return value
+
+  try {
+    return nbt.simplify(value)
+  } catch {
+    return value
+  }
+}
+
+function isRejectLikeText(text) {
+  if (!text) return false
+
+  return /拒绝|不同意|取消|关闭|返回|deny|disagree|reject|cancel|close|back|no/i.test(text)
+}
+
+function isAcceptLikeText(text) {
+  if (!text) return false
+
+  return /同意|接受|确认|继续|好的|允许|agree|accept|confirm|continue|proceed|allow|yes|ok/i.test(text)
+}
+
+function collectDialogActionCandidates(dialog) {
+  const candidates = []
+
+  const pushCandidate = (action, label, path) => {
+    if (!action || typeof action !== 'object' || typeof action.id !== 'string') return
+
+    candidates.push({
+      id: action.id,
+      nbt: action.nbt ?? action.data ?? undefined,
+      labelText: extractDialogText(label || action.label || action.tooltip),
+      path
+    })
+  }
+
+  if (!dialog || typeof dialog !== 'object') {
+    return candidates
+  }
+
+  if (dialog.yes && typeof dialog.yes === 'object') {
+    pushCandidate(dialog.yes.action || dialog.yes.on_click, dialog.yes.label || dialog.yes.tooltip, 'yes')
+  }
+
+  if (dialog.no && typeof dialog.no === 'object') {
+    pushCandidate(dialog.no.action || dialog.no.on_click, dialog.no.label || dialog.no.tooltip, 'no')
+  }
+
+  if (dialog.action && typeof dialog.action === 'object') {
+    pushCandidate(dialog.action.action || dialog.action.on_click || dialog.action, dialog.action.label || dialog.action.tooltip, 'action')
+  }
+
+  if (dialog.action_button && typeof dialog.action_button === 'object') {
+    pushCandidate(
+      dialog.action_button.action || dialog.action_button.on_click || dialog.action_button,
+      dialog.action_button.label || dialog.action_button.tooltip,
+      'action_button'
+    )
+  }
+
+  const listGroups = [
+    ['actions', dialog.actions],
+    ['buttons', dialog.buttons],
+    ['options', dialog.options]
+  ]
+
+  for (const [groupName, group] of listGroups) {
+    if (!Array.isArray(group)) continue
+
+    for (let index = 0; index < group.length; index += 1) {
+      const entry = group[index]
+      if (!entry || typeof entry !== 'object') continue
+
+      pushCandidate(
+        entry.action || entry.on_click || entry,
+        entry.label || entry.tooltip || entry.title,
+        `${groupName}[${index}]`
+      )
+    }
+  }
+
+  return candidates
+}
+
+function pickDialogAcceptAction(dialog) {
+  const candidates = collectDialogActionCandidates(dialog)
+
+  if (candidates.length === 0) return null
+
+  if (dialog && dialog.type === 'minecraft:confirmation') {
+    const yesCandidate = candidates.find((candidate) => candidate.path === 'yes')
+    if (yesCandidate) return yesCandidate
+  }
+
+  const positiveCandidate = candidates.find((candidate) => {
+    const joinedText = `${candidate.id} ${candidate.labelText} ${candidate.path}`
+    return isAcceptLikeText(joinedText) && !isRejectLikeText(joinedText)
+  })
+
+  if (positiveCandidate) return positiveCandidate
+
+  const nonRejectCandidates = candidates.filter((candidate) => {
+    const joinedText = `${candidate.id} ${candidate.labelText} ${candidate.path}`
+    return !isRejectLikeText(joinedText)
+  })
+
+  if (nonRejectCandidates.length === 1) return nonRejectCandidates[0]
+
+  return null
+}
+
+function getDialogTitle(dialog) {
+  if (!dialog || typeof dialog !== 'object') return ''
+  return extractDialogText(dialog.title || dialog.name || dialog.body)
+}
+
 if (bot._client) {
   bot._client.prependListener('world_particles', sanitizeWorldParticlesPacket)
 }
 
 if (bot._client) {
   bot._client.on('packet', (data, meta) => {
-    if (!meta || meta.state !== 'configuration' || meta.name !== 'add_resource_pack') return
+    if (!meta) return
 
-    logVerbose(`Received resource pack request: ${data.uuid}`)
-    bot._client.write('resource_pack_receive', {
-      uuid: data.uuid,
-      result: 1
+    if (meta.state === 'configuration' && meta.name === 'add_resource_pack') {
+      logVerbose(`Received resource pack request: ${data.uuid}`)
+      bot._client.write('resource_pack_receive', {
+        uuid: data.uuid,
+        result: 1
+      })
+      return
+    }
+
+    if (meta.state === 'configuration' && meta.name === 'code_of_conduct') {
+      logInfo('Received code of conduct prompt, accepting automatically.')
+      bot._client.write('accept_code_of_conduct', {})
+      return
+    }
+
+    if (meta.name !== 'show_dialog') return
+
+    const dialog = data && typeof data === 'object'
+      ? simplifyNbtValue(data.dialog)
+      : null
+    const acceptAction = pickDialogAcceptAction(dialog)
+
+    if (!acceptAction) {
+      const dialogTitle = getDialogTitle(dialog)
+      logInfo(`Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, but no accept action was recognized.`)
+      return
+    }
+
+    const dialogTitle = getDialogTitle(dialog)
+    logInfo(
+      `Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, sending automatic accept action (${acceptAction.id}).`
+    )
+    bot._client.write('custom_click_action', {
+      id: acceptAction.id,
+      nbt: { type: 'end', value: undefined }
     })
   })
 }
@@ -389,6 +569,12 @@ const features = [
   createAntiAfkFeature({
     bot,
     config: antiAfkConfig,
+    logInfo,
+    sleep
+  }),
+  createAutoBackFeature({
+    bot,
+    config: autoBackConfig,
     logInfo,
     sleep
   }),
@@ -560,6 +746,22 @@ bot.on('message', (message) => {
   }
 
   logInfo(String(message))
+})
+
+bot.on('death', () => {
+  for (const feature of features) {
+    if (typeof feature.onDeath === 'function') {
+      feature.onDeath()
+    }
+  }
+})
+
+bot.on('spawn', () => {
+  for (const feature of features) {
+    if (typeof feature.onSpawn === 'function') {
+      feature.onSpawn()
+    }
+  }
 })
 
 bot.on('kicked', (reason) => {
