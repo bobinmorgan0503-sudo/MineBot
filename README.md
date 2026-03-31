@@ -3,17 +3,18 @@
 MineBot 是一个基于 `mineflayer` 的 Minecraft 机器人项目，用于挂机、自动化操作、简单导航、挖矿、钓鱼和战斗辅助。
 
 当前已集成的能力：
-
 - `/goto` 坐标导航
 - 自动挖掘固定坐标方块
 - 自动挖矿
 - 自动钓鱼
 - 自动攻击
+- 自动死亡后自动重生并执行 `/back`
 - 反挂机
 - 自动点击聊天验证
 - 自动筛矿
 - 支持通过命令行覆盖服务器与代理参数
 - 包含针对异常粒子包的兼容处理，避免 1.21.11 入服时因粒子解析异常掉线
+- 支持自动处理 1.21.11 配置阶段的 `show_dialog` 守则弹窗并自动同意
 
 ## 环境要求
 
@@ -62,14 +63,17 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 ## Windows 启动脚本
 
 通用脚本：
-
 - `start_bot.cmd <username> <host> <port> <version>`
 
 固定账号脚本：
-
 - `start_Arthas.cmd [host] [port] [version]`
 - `start_MrBobin.cmd [host] [port] [version]`
 - `start_muck.cmd [host] [port] [version] [proxy_host] [proxy_port] [proxy_username] [proxy_password]`
+
+`start_Arthas.cmd` 当前默认连接：
+- 主机：`mccszj.cc`
+- 端口：`25565`
+- 版本：`1.21.11`
 
 ## 本地命令
 
@@ -84,6 +88,9 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 - `/automine status`
 - `/autofish start`
 - `/autofish stop`
+- `/autoback start`
+- `/autoback stop`
+- `/autoback status`
 - `/autoattack start`
 - `/autoattack stop`
 - `/autoattack status`
@@ -107,7 +114,6 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 实现文件：`features/goto.js`
 
 功能：
-
 - 使用 `mineflayer-pathfinder` 导航到指定坐标
 - 支持 `/goto stop` 中断当前路径
 
@@ -116,7 +122,6 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 实现文件：`features/autoDig.js`
 
 功能：
-
 - 按固定坐标列表轮询方块
 - 直接发送挖掘协议包
 - 支持黑名单 / 白名单过滤
@@ -127,7 +132,6 @@ node index.js MrBobin 180.141.249.246 25565 1.20.4
 实现文件：`features/autoMine.js`
 
 功能：
-
 - 在指定半径内搜索目标矿物
 - 每轮只锁定一个目标，处理完成后重新扫描
 - 通过 `pathfinder` 走到目标矿附近
@@ -144,7 +148,6 @@ targetBlocks: ['diamond_ore', 'deepslate_diamond_ore']
 实现文件：`features/autoFish.js`
 
 功能：
-
 - 自动寻找并装备鱼竿
 - 循环执行钓鱼
 - 支持延迟自动启动
@@ -154,7 +157,6 @@ targetBlocks: ['diamond_ore', 'deepslate_diamond_ore']
 实现文件：`features/autoAttack.js`
 
 功能：
-
 - 支持 `single` 单目标和 `multi` 多目标模式
 - 支持按 `distance` 或 `health` 选择优先级
 - 支持 `attack`、`interact`、`interactAt` 三种交互模式
@@ -184,12 +186,31 @@ const autoAttackConfig = {
 }
 ```
 
+### 自动死亡返回
+
+实现文件：`features/autoBack.js`
+
+功能：
+- 检测死亡后自动调用重生
+- 重生后自动发送 `/back`
+- 支持本地命令 `/autoback start`、`/autoback stop`、`/autoback status`
+
+默认配置示例：
+
+```js
+const autoBackConfig = {
+  enabled: true,
+  respawnDelayMs: 50,
+  backDelayMs: 100,
+  backCommand: '/back'
+}
+```
+
 ### 反挂机
 
 实现文件：`features/antiAfk.js`
 
 功能：
-
 - 周期性做小范围移动
 - 用于避免长时间挂机掉线
 
@@ -198,7 +219,6 @@ const autoAttackConfig = {
 实现文件：`features/autoVerify.js`
 
 功能：
-
 - 监听聊天 JSON 中的 `clickEvent`
 - 自动识别并执行验证相关命令
 - 支持调试输出
@@ -214,7 +234,6 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 实现文件：`features/sieve.js`
 
 功能：
-
 - 打开指定容器
 - 按固定顺序点击方块
 - 循环执行筛矿流程
@@ -232,6 +251,7 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 - `timingConfig`：进服后自动命令的发送间隔
 - `spawnCommands`：进服后自动执行的命令
 - `antiAfkConfig`
+- `autoBackConfig`
 - `autoDigConfig`
 - `autoFishConfig`
 - `autoAttackConfig`
@@ -245,6 +265,7 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 - `config.js`：项目主配置
 - `features/navigation.js`：共享导航配置
 - `features/goto.js`：坐标导航
+- `features/autoBack.js`：自动死亡返回
 - `features/autoDig.js`：自动挖掘
 - `features/autoMine.js`：自动挖矿
 - `features/autoFish.js`：自动钓鱼
@@ -259,3 +280,4 @@ matchTexts: ['.gogogogochecker=', '/verify', '/login', '/register']
 - 进服后自动执行的命令来自 `config.js` 里的 `spawnCommands`
 - 如果服务器版本不同，可以通过命令行参数覆盖 `version`
 - 如果需要代理，请通过 `--proxy-host`、`--proxy-port`、`--proxy-username`、`--proxy-password` 传入
+- 对于 1.21.11 的 Paper 对话框守则弹窗，机器人会在配置阶段自动发送 `custom_click_action` 同意按钮
