@@ -42,7 +42,6 @@ const ATTACK_SPEED_BY_ITEM_NAME = {
 function createAutoAttackFeature({
   bot,
   config,
-  logInfo,
   sleep
 }) {
   let enabled = false
@@ -574,10 +573,8 @@ function createAutoAttackFeature({
 
       try {
         await performInteraction(entity, currentRunId)
-        logInfo(`Auto attack ${getInteraction()} -> ${describeEntity(entity)}.`)
       } catch (error) {
         if (!isActive(currentRunId)) break
-        logInfo(`Auto attack skipped ${describeEntity(entity)}: ${error.message}`)
       }
     }
 
@@ -592,58 +589,33 @@ function createAutoAttackFeature({
         await attackCandidates(currentRunId)
       }
     } catch (error) {
-      if (isActive(currentRunId)) {
-        console.error('Auto attack loop failed:', error.message)
-      }
     } finally {
       if (runId === currentRunId) {
         enabled = false
       }
-
-      logInfo('Auto attack stopped.')
     }
   }
 
   function startAutoAttack() {
-    if (!bot.entity || !bot.entity.position) {
-      logInfo('Bot is not ready to attack yet.')
-      return
-    }
-
-    if (enabled) {
-      logInfo('Auto attack is already running.')
-      return
-    }
+    if (!bot.entity || !bot.entity.position) return
+    if (enabled) return
 
     clearAutoStartTimer()
     enabled = true
     runId += 1
     lastActionAt = 0
     const currentRunId = runId
-
-    logInfo(
-      `Auto attack enabled. mode=${getMode()}, interaction=${getInteraction()}, range=${getAttackRange()}, cooldown=${Math.round(getCooldownMs())}ms.`
-    )
     void autoAttackLoop(currentRunId)
   }
 
   async function stopAutoAttack({ announceIfIdle = true } = {}) {
     clearAutoStartTimer()
 
-    if (!enabled) {
-      if (announceIfIdle) {
-        logInfo('Auto attack is already stopped.')
-      }
-      return
-    }
+    if (!enabled) return
 
     enabled = false
     runId += 1
     lastActionAt = 0
-
-    if (announceIfIdle) {
-      logInfo('Auto attack stop requested.')
-    }
   }
 
   async function handleCommand(message) {
@@ -694,10 +666,6 @@ function createAutoAttackFeature({
       autoStartTimer = null
       startAutoAttack()
     }, delayMs)
-
-    if (delayMs > 0) {
-      logInfo(`Auto attack will auto-start in ${Math.round(delayMs / 1000)} seconds.`)
-    }
   }
 
   function onDisconnect() {

@@ -143,42 +143,11 @@ function createAutoVerifyFeature({
   }
 
   async function handleCommand(message) {
-    const normalized = message.toLowerCase()
-
-    if (normalized === '/autoverify start') {
-      enabled = true
-      logInfo('Auto verify enabled.')
-      return true
-    }
-
-    if (normalized === '/autoverify stop') {
-      enabled = false
-      logInfo('Auto verify disabled.')
-      return true
-    }
-
-    if (normalized === '/autoverify debug on') {
-      debugEnabled = true
-      logInfo('Auto verify debug enabled.')
-      return true
-    }
-
-    if (normalized === '/autoverify debug off') {
-      debugEnabled = false
-      logInfo('Auto verify debug disabled.')
-      return true
-    }
-
     return false
   }
 
   function getCommandHelp() {
-    return [
-      'Local command: /autoverify start',
-      'Local command: /autoverify stop',
-      'Local command: /autoverify debug on',
-      'Local command: /autoverify debug off'
-    ]
+    return []
   }
 
   function onDisconnect() {

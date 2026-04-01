@@ -92,10 +92,7 @@ function createAutoBackFeature({
   }
 
   function startAutoBack() {
-    if (enabled) {
-      logInfo('Auto back is already enabled.')
-      return
-    }
+    if (enabled) return
 
     enabled = true
     runId += 1
@@ -105,12 +102,7 @@ function createAutoBackFeature({
   }
 
   async function stopAutoBack({ announceIfIdle = true } = {}) {
-    if (!enabled) {
-      if (announceIfIdle) {
-        logInfo('Auto back is already disabled.')
-      }
-      return
-    }
+    if (!enabled) return
 
     enabled = false
     runId += 1
@@ -123,38 +115,11 @@ function createAutoBackFeature({
   }
 
   async function handleCommand(message) {
-    const normalized = message.trim().toLowerCase()
-
-    if (normalized === '/autoback start') {
-      startAutoBack()
-      return true
-    }
-
-    if (normalized === '/autoback stop') {
-      await stopAutoBack()
-      return true
-    }
-
-    if (normalized === '/autoback status') {
-      if (!enabled) {
-        logInfo('Auto back is disabled.')
-      } else {
-        logInfo(
-          `Auto back is enabled. respawnDelay=${getRespawnDelayMs()}ms, backDelay=${getBackDelayMs()}ms, command=${getBackCommand()}.`
-        )
-      }
-      return true
-    }
-
     return false
   }
 
   function getCommandHelp() {
-    return [
-      'Local command: /autoback start',
-      'Local command: /autoback stop',
-      'Local command: /autoback status'
-    ]
+    return []
   }
 
   function onDisconnect() {
