@@ -269,6 +269,80 @@ const autoFishConfig = {
   bobberDistance: 48
 }
 
+// 自动丢弃配置。
+const autoDropConfig = {
+  // 是否启用自动丢弃。
+  // 可选值：true | false
+  enabled: true,
+
+  // 自动启动延迟。
+  // 可选值：
+  // - -1：不自动启动
+  // - 0：进服后立即启动
+  // - > 0：延迟指定毫秒后启动
+  autoStartDelayMs: -1,
+
+  // 物品名单模式。
+  // 可选值：
+  // - 'blacklist'：保留 `items` 列表中的物品，丢弃其余物品
+  // - 'whitelist'：只丢弃 `items` 列表中的物品
+  listType: 'blacklist',
+
+  // 物品规则列表。
+  // 可选值：字符串数组；匹配 `item.name`，忽略大小写，并支持 `*` 通配符，例如：
+  // - ['*_ore']
+  // - ['stone', 'dirt']
+  // - ['*_pickaxe', 'diamond']
+  items: [
+    '*_helmet',
+    '*_chestplate',
+    '*_leggings',
+    '*_boots',
+    '*_elytra',
+    '*_sword',
+    '*_pickaxe',
+    '*_axe',
+    '*_shovel',
+    '*_hoe',
+    'bow',
+    'crossbow',
+    'trident',
+    'shield',
+    'fishing_rod',
+    'shears',
+    'flint_and_steel',
+    '*_ore',
+    '*_ingot',
+    '*_nugget',
+    'coal',
+    'charcoal',
+    'diamond',
+    'emerald',
+    'lapis_lazuli',
+    'redstone',
+    'quartz',
+    'amethyst_shard',
+    'ancient_debris',
+    'netherite_scrap',
+    'netherite_ingot',
+    'raw_iron',
+    'raw_gold',
+    'raw_copper'
+  ],
+
+  // 没有可丢弃物品时的轮询间隔。
+  // 可选值：任意 > 0 的毫秒整数。
+  idleDelayMs: 1000,
+
+  // 每次丢弃一组物品后的等待时间。
+  // 可选值：任意 >= 0 的毫秒整数。
+  dropDelayMs: 300,
+
+  // 被容器界面或异常阻塞时的重试间隔。
+  // 可选值：任意 > 0 的毫秒整数。
+  retryDelayMs: 1500
+}
+
 // 反挂机配置。
 const antiAfkConfig = {
   // 是否启用反挂机。
@@ -493,6 +567,7 @@ module.exports = {
   autoBackConfig,
   autoAttackConfig,
   autoDigConfig,
+  autoDropConfig,
   autoFishConfig,
   autoMineConfig,
   autoVerifyConfig,

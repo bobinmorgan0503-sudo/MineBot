@@ -13,6 +13,7 @@ const { createAutoBackFeature } = require('./features/autoBack')
 const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoAttackFeature } = require('./features/autoAttack')
 const { createAutoDigFeature } = require('./features/autoDig')
+const { createAutoDropFeature } = require('./features/autoDrop')
 const { createAutoFishFeature } = require('./features/autoFish')
 const { createInventoryFeature } = require('./features/inventory')
 const { createAutoMineFeature } = require('./features/autoMine')
@@ -69,6 +70,7 @@ const {
   autoBackConfig,
   autoAttackConfig,
   autoDigConfig,
+  autoDropConfig,
   autoFishConfig,
   autoMineConfig,
   autoVerifyConfig,
@@ -320,6 +322,8 @@ function sanitizeWorldParticlesPacket(packet) {
 }
 
 function extractDialogText(value) {
+  value = simplifyNbtValue(value)
+
   if (value == null) return ''
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return String(value)
@@ -331,7 +335,7 @@ function extractDialogText(value) {
 
   if (typeof value !== 'object') return ''
 
-  const directKeys = ['text', 'contents', 'label', 'tooltip', 'title']
+  const directKeys = ['text', 'contents', 'label', 'tooltip', 'title', 'translate', 'extra', 'with']
   const fragments = []
 
   for (const key of directKeys) {
@@ -340,7 +344,15 @@ function extractDialogText(value) {
     }
   }
 
-  return fragments.filter(Boolean).join(' ')
+  if (fragments.length > 0) {
+    return fragments.filter(Boolean).join(' ').trim()
+  }
+
+  return Object.values(value)
+    .map((entry) => extractDialogText(entry))
+    .filter(Boolean)
+    .join(' ')
+    .trim()
 }
 
 function simplifyNbtValue(value) {
@@ -462,6 +474,32 @@ function pickDialogAcceptAction(dialog) {
 function getDialogTitle(dialog) {
   if (!dialog || typeof dialog !== 'object') return ''
   return extractDialogText(dialog.title || dialog.name || dialog.body)
+}
+
+function formatStructuredReason(reason) {
+  if (reason == null || reason === '') return ''
+
+  if (typeof reason === 'string') {
+    return reason
+  }
+
+  if (reason && typeof reason.toAnsi === 'function') {
+    try {
+      return reason.toAnsi()
+    } catch {
+      // fall through to structured parsing
+    }
+  }
+
+  const simplified = simplifyNbtValue(reason)
+  const text = extractDialogText(simplified)
+  if (text) return text
+
+  try {
+    return JSON.stringify(simplified)
+  } catch {
+    return String(reason)
+  }
 }
 
 if (bot._client) {
@@ -588,6 +626,12 @@ const features = [
   createAutoDigFeature({
     bot,
     config: autoDigConfig,
+    logInfo,
+    sleep
+  }),
+  createAutoDropFeature({
+    bot,
+    config: autoDropConfig,
     logInfo,
     sleep
   }),
@@ -774,7 +818,8 @@ bot.on('kicked', (reason) => {
   for (const feature of features) {
     if (typeof feature.onDisconnect === 'function') feature.onDisconnect()
   }
-  logInfo('Kicked:', reason)
+  const formattedReason = formatStructuredReason(reason)
+  logInfo('Kicked:', formattedReason || reason)
 })
 
 bot.on('end', (reason) => {
@@ -782,7 +827,8 @@ bot.on('end', (reason) => {
   for (const feature of features) {
     if (typeof feature.onDisconnect === 'function') feature.onDisconnect()
   }
-  logInfo('Disconnected from server.', reason || '')
+  const formattedReason = formatStructuredReason(reason)
+  logInfo('Disconnected from server.', formattedReason || '')
   terminal.close()
 })
 
