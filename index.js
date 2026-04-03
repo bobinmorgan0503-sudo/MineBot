@@ -14,6 +14,7 @@ const { createAntiAfkFeature } = require('./features/antiAfk')
 const { createAutoAttackFeature } = require('./features/autoAttack')
 const { createAutoDigFeature } = require('./features/autoDig')
 const { createAutoFishFeature } = require('./features/autoFish')
+const { createInventoryFeature } = require('./features/inventory')
 const { createAutoMineFeature } = require('./features/autoMine')
 const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
@@ -595,6 +596,10 @@ const features = [
     config: autoFishConfig,
     logInfo,
     sleep
+  }),
+  createInventoryFeature({
+    bot,
+    logInfo
   }),
   createAutoMineFeature({
     bot,
