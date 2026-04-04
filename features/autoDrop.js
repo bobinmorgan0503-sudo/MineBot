@@ -82,6 +82,25 @@ function createAutoDropFeature({
     return normalizeName(config.listType) === 'whitelist' ? 'whitelist' : 'blacklist'
   }
 
+  function getKeepAtLeastMap() {
+    const rawRules = config.keepAtLeast
+    const rules = new Map()
+
+    if (!rawRules || typeof rawRules !== 'object') {
+      return rules
+    }
+
+    for (const [itemName, count] of Object.entries(rawRules)) {
+      const normalizedName = normalizeName(itemName)
+      const normalizedCount = Number.parseInt(count, 10)
+      if (!normalizedName) continue
+      if (!Number.isInteger(normalizedCount) || normalizedCount <= 0) continue
+      rules.set(normalizedName, normalizedCount)
+    }
+
+    return rules
+  }
+
   function shouldDropItem(item) {
     if (!item) return false
 
@@ -92,15 +111,53 @@ function createAutoDropFeature({
     return getListMode() === 'whitelist' ? listed : !listed
   }
 
-  function getDroppableSlots() {
+  function getTrackedInventoryItems() {
     const inventorySlots = bot.inventory?.slots || []
-    const slots = []
+    const items = []
 
     for (let slot = 9; slot <= 44 && slot < inventorySlots.length; slot += 1) {
       const item = inventorySlots[slot]
       if (!item) continue
-      if (!shouldDropItem(item)) continue
-      slots.push(item)
+
+      items.push({
+        slot,
+        item,
+        normalizedName: normalizeName(item.name || item.displayName)
+      })
+    }
+
+    return items
+  }
+
+  function getDroppableSlots() {
+    const trackedItems = getTrackedInventoryItems()
+    const keepAtLeast = getKeepAtLeastMap()
+    const itemTotals = new Map()
+    const slots = []
+
+    for (const entry of trackedItems) {
+      itemTotals.set(entry.normalizedName, (itemTotals.get(entry.normalizedName) || 0) + entry.item.count)
+    }
+
+    const droppableTotals = new Map()
+    for (const [itemName, totalCount] of itemTotals.entries()) {
+      const keepCount = keepAtLeast.get(itemName) || 0
+      droppableTotals.set(itemName, Math.max(0, totalCount - keepCount))
+    }
+
+    for (const entry of trackedItems) {
+      if (!shouldDropItem(entry.item)) continue
+
+      const remainingDroppableCount = droppableTotals.get(entry.normalizedName) || 0
+      if (remainingDroppableCount <= 0) continue
+
+      const countToDrop = Math.min(entry.item.count, remainingDroppableCount)
+      slots.push({
+        ...entry,
+        countToDrop,
+        dropWholeStack: countToDrop >= entry.item.count
+      })
+      droppableTotals.set(entry.normalizedName, remainingDroppableCount - countToDrop)
     }
 
     return slots
@@ -108,7 +165,23 @@ function createAutoDropFeature({
 
   function getStatusSummary() {
     const configuredItems = Array.isArray(config.items) ? config.items : []
-    return `${enabled ? 'running' : 'stopped'}, mode=${getListMode()}, rules=${configuredItems.length}`
+    return (
+      `${enabled ? 'running' : 'stopped'}, mode=${getListMode()}, ` +
+      `rules=${configuredItems.length}, keepRules=${getKeepAtLeastMap().size}`
+    )
+  }
+
+  async function dropEntry(entry) {
+    if (entry.dropWholeStack) {
+      await bot.clickWindow(entry.slot, 1, 4)
+      return entry.countToDrop
+    }
+
+    for (let index = 0; index < entry.countToDrop; index += 1) {
+      await bot.clickWindow(entry.slot, 0, 4)
+    }
+
+    return entry.countToDrop
   }
 
   async function autoDropLoop(currentRunId) {
@@ -138,10 +211,10 @@ function createAutoDropFeature({
         }
 
         setBlockedReason('')
-        const item = droppableItems[0]
-        await bot.tossStack(item)
+        const entry = droppableItems[0]
+        const droppedCount = await dropEntry(entry)
         assertActive(currentRunId)
-        logInfo(`Auto drop tossed ${item.name} x${item.count} from slot ${item.slot}.`)
+        logInfo(`Auto drop tossed ${entry.item.name} x${droppedCount} from slot ${entry.slot}.`)
 
         if (dropDelayMs > 0) {
           await sleep(dropDelayMs)

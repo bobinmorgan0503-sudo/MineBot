@@ -330,6 +330,19 @@ const autoDropConfig = {
     'raw_copper'
   ],
 
+
+  // 指定某些物品至少保留多少个。
+  // 可选值：对象，键为 `item.name`，值为要保留的最小数量；只有超出的部分才会被丢弃，例如：
+  // - { cobblestone: 64 }
+  // - { cobblestone: 64, dirt: 64, netherrack: 64 }
+  // - {}
+  keepAtLeast: {
+    cobblestone: 64,
+    stone: 64,
+    cobbled_deepslate: 64,
+    dirt: 64,
+    netherrack: 64
+  },
   // 没有可丢弃物品时的轮询间隔。
   // 可选值：任意 > 0 的毫秒整数。
   idleDelayMs: 1000,
