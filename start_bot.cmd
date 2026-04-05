@@ -7,7 +7,7 @@ set "BOT_VERSION=%~4"
 if "%BOT_NAME%"=="" set "BOT_NAME=default"
 if "%BOT_HOST%"=="" set "BOT_HOST=default-host"
 if "%BOT_PORT%"=="" set "BOT_PORT=default-port"
-if "%BOT_VERSION%"=="" set "BOT_VERSION=1.20.4"
+if "%BOT_VERSION%"=="" set "BOT_VERSION=1.21.11"
 
 title MineBot - %BOT_NAME% @ %BOT_HOST%:%BOT_PORT% (%BOT_VERSION%)
 npm start -- %BOT_NAME% %BOT_HOST% %BOT_PORT% %BOT_VERSION%

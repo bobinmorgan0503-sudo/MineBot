@@ -16,6 +16,7 @@ const { createAutoDigFeature } = require('./features/autoDig')
 const { createAutoDropFeature } = require('./features/autoDrop')
 const { createAutoFishFeature } = require('./features/autoFish')
 const { createInventoryFeature } = require('./features/inventory')
+const { createMakeuFeature } = require('./features/makeu')
 const { createAutoMineFeature } = require('./features/autoMine')
 const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
@@ -72,6 +73,7 @@ const {
   autoDigConfig,
   autoDropConfig,
   autoFishConfig,
+  makeuConfig,
   autoMineConfig,
   autoVerifyConfig,
   protocolConfig,
@@ -661,6 +663,13 @@ const features = [
   createSieveFeature({
     bot,
     config: sieveConfig,
+    logInfo,
+    logVerbose,
+    sleep
+  }),
+  createMakeuFeature({
+    bot,
+    config: makeuConfig,
     logInfo,
     logVerbose,
     sleep

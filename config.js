@@ -20,7 +20,7 @@ const serverConfig = {
   // - '1.12.2'
   // - '1.20.4'
   // - '1.21.11'
-  version: '1.12.2',
+  version: '1.21.11',
 
   // 机器人用户名。
   // 可选值：任意字符串；离线模式下就是进服显示名。
@@ -148,6 +148,63 @@ const sieveConfig = {
   // 第二个栅栏坐标。
   // 可选值：`new Vec3(x, y, z)`。
   fencePos2: new Vec3(-11897, 68, -2093),
+
+  // 容器里要 shift-click 的砂砾槽位。
+  // 可选值：任意 >= 0 的整数；通常从 0 开始。
+  gravelSlot: 0,
+
+  // `block_place` 交互方向。
+  // 可选值：
+  // - 0：down
+  // - 1：up
+  // - 2：north
+  // - 3：south
+  // - 4：west
+  // - 5：east
+  blockFaceDown: 0,
+
+  // 点击方块时的光标位置。
+  // 可选值：0.0 到 1.0 的数字；0.5 表示方块中心附近。
+  interactCursor: 0.5
+}
+
+// Makeu 配置。
+const makeuConfig = {
+  // 每轮循环的间隔。
+  // 可选值：任意 > 0 的毫秒整数。
+  tickDelayMs: 50,
+
+  // 等待容器界面打开的超时时间。
+  // 可选值：任意 > 0 的毫秒整数。
+  containerOpenTimeoutMs: 3000,
+
+  // 砂砾容器坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  gravelContainerPos: new Vec3(-651776, 21, 122690),
+
+  // 活板门坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  trapdoorPos: new Vec3(-651776, 22, 122694),
+
+  // 每轮都要连续点击两次的栅栏坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  fencePos: new Vec3(-651776, 22, 122692),
+
+  // 第一个栅栏坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  fencePos1: new Vec3(-651775, 22, 122693),
+
+  // 第二个栅栏坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  fencePos2: new Vec3(-651779, 22, 122695),
+
+  // 第三个栅栏坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  fencePos3: new Vec3(-651780, 22, 122693),
+
+  // 第四个栅栏坐标。
+  // 可选值：`new Vec3(x, y, z)`。
+  fencePos4: new Vec3(-651779, 22, 122691),
 
   // 容器里要 shift-click 的砂砾槽位。
   // 可选值：任意 >= 0 的整数；通常从 0 开始。
@@ -582,6 +639,7 @@ module.exports = {
   autoDigConfig,
   autoDropConfig,
   autoFishConfig,
+  makeuConfig,
   autoMineConfig,
   autoVerifyConfig,
   protocolConfig,
