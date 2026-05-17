@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const readline = require('readline')
+const dns = require('dns').promises
 const mineflayer = require('mineflayer')
 const nbt = require('prismarine-nbt')
 const { SocksClient } = require('socks')
@@ -17,6 +18,7 @@ const { createAutoDropFeature } = require('./features/autoDrop')
 const { createAutoFishFeature } = require('./features/autoFish')
 const { createInventoryFeature } = require('./features/inventory')
 const { createMakeuFeature } = require('./features/makeu')
+const { createNukerFeature } = require('./features/nuker')
 const { createAutoMineFeature } = require('./features/autoMine')
 const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
@@ -74,6 +76,7 @@ const {
   autoDropConfig,
   autoFishConfig,
   makeuConfig,
+  nukerConfig,
   autoMineConfig,
   autoVerifyConfig,
   protocolConfig,
@@ -245,9 +248,39 @@ if (proxyRequested && !proxyEnabled) {
   throw new Error('Proxy host and port are required when using proxy options.')
 }
 
+async function resolveMinecraftDestination(host, port) {
+  if (!host || !Number.isFinite(port) || port !== 25565) {
+    return { host, port }
+  }
+
+  try {
+    const records = await dns.resolveSrv(`_minecraft._tcp.${host}`)
+    if (!Array.isArray(records) || records.length === 0) {
+      return { host, port }
+    }
+
+    records.sort((left, right) => {
+      if (left.priority !== right.priority) {
+        return left.priority - right.priority
+      }
+
+      return right.weight - left.weight
+    })
+
+    return {
+      host: records[0].name,
+      port: records[0].port
+    }
+  } catch {
+    return { host, port }
+  }
+}
+
 const botOptions = {
   username: runtimeServerConfig.username,
   auth: runtimeServerConfig.auth,
+  host: runtimeServerConfig.host,
+  port: runtimeServerConfig.port,
   version: runtimeServerConfig.version,
   customPackets: protocolConfig.customPackets,
   respawn: false,
@@ -258,32 +291,46 @@ const botOptions = {
 
 if (proxyEnabled) {
   botOptions.connect = (client) => {
-    SocksClient.createConnection({
-      proxy: {
-        host: runtimeProxyConfig.host,
-        port: runtimeProxyConfig.port,
-        type: 5,
-        userId: runtimeProxyConfig.username || undefined,
-        password: runtimeProxyConfig.password || undefined
-      },
-      command: 'connect',
-      destination: {
-        host: runtimeServerConfig.host,
-        port: runtimeServerConfig.port
-      }
-    }, (error, info) => {
-      if (error) {
-        client.emit('error', error)
-        return
+    void (async () => {
+      const destination = await resolveMinecraftDestination(runtimeServerConfig.host, runtimeServerConfig.port)
+
+      // Match minecraft-protocol's built-in SRV flow so proxy mode behaves the
+      // same as a normal direct connection for servers behind SRV records.
+      botOptions.host = destination.host
+      botOptions.port = destination.port
+
+      if (destination.host !== runtimeServerConfig.host || destination.port !== runtimeServerConfig.port) {
+        logInfo(
+          `Resolved Minecraft SRV target ${runtimeServerConfig.host}:${runtimeServerConfig.port} ` +
+          `-> ${destination.host}:${destination.port} for proxy connection.`
+        )
       }
 
-      client.setSocket(info.socket)
-      client.emit('connect')
+      SocksClient.createConnection({
+        proxy: {
+          host: runtimeProxyConfig.host,
+          port: runtimeProxyConfig.port,
+          type: 5,
+          userId: runtimeProxyConfig.username || undefined,
+          password: runtimeProxyConfig.password || undefined
+        },
+        command: 'connect',
+        destination
+      }, (error, info) => {
+        if (error) {
+          client.emit('error', error)
+          return
+        }
+
+        client.setSocket(info.socket)
+        client.emit('connect')
+      })
+    })().catch((error) => {
+      if (error) {
+        client.emit('error', error)
+      }
     })
   }
-} else {
-  botOptions.host = runtimeServerConfig.host
-  botOptions.port = runtimeServerConfig.port
 }
 
 const bot = mineflayer.createBot(botOptions)
@@ -585,6 +632,22 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isLoginCommand(command) {
+  return /^\/login(?:\s|$)/i.test(command)
+}
+
+async function performPostLoginAttack() {
+  await sleep(1000)
+
+  if (typeof bot.swingArm === 'function') {
+    bot.swingArm('right')
+    logInfo('Performed one left-click swing after /login.')
+    return
+  }
+
+  logInfo('Skipped post-/login attack because swingArm is unavailable.')
+}
+
 async function runSpawnCommands() {
   const commands = Array.isArray(spawnCommands)
     ? spawnCommands.map((command) => String(command).trim()).filter(Boolean)
@@ -597,6 +660,10 @@ async function runSpawnCommands() {
     await sleep(perCommandDelayMs)
     bot.chat(command)
     logInfo(`Sent: ${command}`)
+
+    if (isLoginCommand(command)) {
+      await performPostLoginAttack()
+    }
   }
 }
 
@@ -659,6 +726,12 @@ const features = [
     bot,
     config: autoVerifyConfig,
     logInfo
+  }),
+  createNukerFeature({
+    bot,
+    config: nukerConfig,
+    logInfo,
+    sleep
   }),
   createSieveFeature({
     bot,

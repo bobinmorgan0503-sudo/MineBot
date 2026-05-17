@@ -127,7 +127,7 @@ const spawnCommands = [
 const sieveConfig = {
   // 每轮筛矿循环的间隔。
   // 可选值：任意 > 0 的毫秒整数。
-  tickDelayMs: 100,
+  tickDelayMs: 20,
 
   // 等待容器界面打开的超时时间。
   // 可选值：任意 > 0 的毫秒整数。
@@ -135,19 +135,19 @@ const sieveConfig = {
 
   // 砂砾容器坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  gravelContainerPos: new Vec3(-11894, 67, -2092),
+  gravelContainerPos: new Vec3(-11554600, 65, -2083144),
 
   // 活板门坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  trapdoorPos: new Vec3(-11896, 68, -2094),
+  trapdoorPos: new Vec3(-11554598, 66, -2083146),
 
   // 第一个栅栏坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  fencePos1: new Vec3(-11896, 68, -2092),
+  fencePos1: new Vec3(-11554600, 66, -2083146),
 
   // 第二个栅栏坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  fencePos2: new Vec3(-11897, 68, -2093),
+  fencePos2: new Vec3(-11554599, 66, -2083147),
 
   // 容器里要 shift-click 的砂砾槽位。
   // 可选值：任意 >= 0 的整数；通常从 0 开始。
@@ -294,6 +294,79 @@ const autoDigConfig = {
   // `lookat` / `both` 模式下，准星检测的最大距离。
   // 可选值：任意 > 0 的数字，单位为格。
   lookAtMaxDistance: 5
+}
+
+// Nuker 配置。
+const nukerConfig = {
+  // 是否启用 nuker。
+  // 可选值：true | false
+  enabled: true,
+
+  // 形状。
+  // 当前仅实现：
+  // - 'cube'：按前后左右上下范围构成立方体搜索区
+  shape: 'cube',
+
+  // 方块名单模式。
+  // 可选值：
+  // - 'blacklist'：忽略 `blocks` 列表中的方块
+  // - 'whitelist'：只挖 `blocks` 列表中的方块
+  listType: 'whitelist',
+
+  // 方块名称列表。
+  // 可选值：字符串数组；匹配 `displayName` / `name`，忽略空格和大小写。
+  blocks: ['cobblestone'],
+
+  // 向上的范围。
+  up: 6,
+
+  // 向下的范围。
+  down: 2,
+
+  // 左侧范围。
+  left: 4,
+
+  // 右侧范围。
+  right: 4,
+
+  // 面前范围。
+  forward: 4,
+
+  // 身后范围。
+  back: 4,
+
+  // 墙体范围预留值。
+  wallsRange: 6,
+
+  // 每轮最多挖多少个方块。
+  maxBlocksPerTick: 5,
+
+  // 排序方式。
+  // 可选值：
+  // - 'closest'：优先最近的方块
+  // - 'index'：按搜索顺序处理
+  sortMode: 'closest',
+
+  // 是否使用协议包秒挖。
+  packetMine: true,
+
+  // 是否只挖当前工具适合的方块。
+  onlySuitableTools: false,
+
+  // 是否在挖掘前先尝试与目标方块交互。
+  interact: false,
+
+  // 是否在挖掘前转头看向目标方块。
+  rotate: false,
+
+  // 每轮挖掘后的延迟。
+  delayMs: 0,
+
+  // 没有目标时的空闲轮询间隔。
+  idleDelayMs: 100,
+
+  // 出错后的重试间隔。
+  retryDelayMs: 1000
 }
 
 // 自动钓鱼配置。
@@ -639,6 +712,7 @@ module.exports = {
   autoDigConfig,
   autoDropConfig,
   autoFishConfig,
+  nukerConfig,
   makeuConfig,
   autoMineConfig,
   autoVerifyConfig,
