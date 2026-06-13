@@ -493,6 +493,20 @@ function collectDialogActionCandidates(dialog) {
   return candidates
 }
 
+function collectDialogInputCandidates(dialog) {
+  if (!dialog || typeof dialog !== 'object' || !Array.isArray(dialog.inputs)) {
+    return []
+  }
+
+  return dialog.inputs
+    .filter((input) => input && typeof input === 'object' && typeof input.key === 'string')
+    .map((input) => ({
+      key: input.key,
+      type: input.type || '',
+      labelText: extractDialogText(input.label || input.tooltip || input.placeholder)
+    }))
+}
+
 function pickDialogAcceptAction(dialog) {
   const candidates = collectDialogActionCandidates(dialog)
 
@@ -518,6 +532,99 @@ function pickDialogAcceptAction(dialog) {
   if (nonRejectCandidates.length === 1) return nonRejectCandidates[0]
 
   return null
+}
+
+function getConfiguredLoginPassword() {
+  if (!Array.isArray(spawnCommands)) return ''
+
+  for (const command of spawnCommands) {
+    const match = String(command).trim().match(/^\/login\s+(\S+)/i)
+    if (match) return match[1]
+  }
+
+  return ''
+}
+
+function pickDialogInputKey(inputs, preferredKeys, labelPattern) {
+  const preferred = inputs.find((input) => preferredKeys.includes(input.key))
+  if (preferred) return preferred.key
+
+  const byLabel = inputs.find((input) => labelPattern.test(`${input.key} ${input.labelText}`))
+  return byLabel ? byLabel.key : ''
+}
+
+function buildDialogResponseNbt(values) {
+  const entries = {}
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!key) continue
+
+    if (typeof value === 'boolean') {
+      entries[key] = nbt.byte(value ? 1 : 0)
+    } else {
+      entries[key] = nbt.string(String(value))
+    }
+  }
+
+  if (Object.keys(entries).length === 0) {
+    return { type: 'end', value: undefined }
+  }
+
+  return nbt.comp(entries)
+}
+
+function buildAutoDialogResponseNbt(dialog, action) {
+  if (!action || typeof action.id !== 'string') {
+    return { type: 'end', value: undefined }
+  }
+
+  const inputs = collectDialogInputCandidates(dialog)
+  const actionText = `${action.id} ${action.labelText} ${action.path}`
+  const password = getConfiguredLoginPassword()
+
+  if (/loginpool:auth_login|auth_login|login/i.test(actionText) && password) {
+    const passwordKey = pickDialogInputKey(
+      inputs,
+      ['password', 'login_password'],
+      /密码|password/i
+    )
+    const autoLoginKey = pickDialogInputKey(
+      inputs,
+      ['auto_login_by_ip'],
+      /自动登录|auto.*login|ip/i
+    )
+
+    const values = {}
+    if (passwordKey) values[passwordKey] = password
+    if (autoLoginKey) values[autoLoginKey] = true
+
+    if (Object.keys(values).length > 0) {
+      return buildDialogResponseNbt(values)
+    }
+  }
+
+  if (/loginpool:auth_register|auth_register|register/i.test(actionText) && password) {
+    const passwordKey = pickDialogInputKey(
+      inputs,
+      ['reg_password', 'password'],
+      /密码|password/i
+    )
+    const confirmPasswordKey = pickDialogInputKey(
+      inputs.filter((input) => input.key !== passwordKey),
+      ['reg_confirm_password', 'confirm_password'],
+      /确认|再次|confirm/i
+    )
+
+    const values = {}
+    if (passwordKey) values[passwordKey] = password
+    if (confirmPasswordKey) values[confirmPasswordKey] = password
+
+    if (Object.keys(values).length > 0) {
+      return buildDialogResponseNbt(values)
+    }
+  }
+
+  return action.nbt || { type: 'end', value: undefined }
 }
 
 function getDialogTitle(dialog) {
@@ -596,9 +703,14 @@ if (bot._client) {
     logInfo(
       `Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, sending automatic accept action (${acceptAction.id}).`
     )
+    const responseNbt = buildAutoDialogResponseNbt(dialog, acceptAction)
+    if (/loginpool:auth_login|auth_login/i.test(acceptAction.id) && responseNbt.type === 'compound') {
+      dialogLoginSubmitted = true
+    }
+
     bot._client.write('custom_click_action', {
       id: acceptAction.id,
-      nbt: { type: 'end', value: undefined }
+      nbt: responseNbt
     })
   })
 }
@@ -606,6 +718,7 @@ if (bot._client) {
 let chatReady = false
 let setupStarted = false
 let preSpawnJoinClickSent = false
+let dialogLoginSubmitted = false
 const SHOW_CHAT_LOGS = true
 const SHOW_VERBOSE_LOGS = false
 
@@ -640,6 +753,10 @@ function sleep(ms) {
 
 function isLoginCommand(command) {
   return /^\/login(?:\s|$)/i.test(command)
+}
+
+function isAuthenticatedMessage(text) {
+  return /\u5df2\u6210\u529f\u767b\u5f55|\u5df2\u5e2e\u4f60\u81ea\u52a8\u767b\u5f55|successfully logged in/i.test(text)
 }
 
 async function performPostLoginAttack() {
@@ -688,6 +805,11 @@ async function runSpawnCommands() {
 
   const perCommandDelayMs = Number(timingConfig.perCommandDelayMs || 1000)
   for (const command of commands) {
+    if (dialogLoginSubmitted && isLoginCommand(command)) {
+      logInfo(`Skipped ${command} because dialog login was already submitted.`)
+      continue
+    }
+
     await sleep(perCommandDelayMs)
     bot.chat(command)
     logInfo(`Sent: ${command}`)
@@ -894,6 +1016,10 @@ bot.on('login', () => {
 })
 
 bot.on('message', (message) => {
+  if (isAuthenticatedMessage(String(message))) {
+    dialogLoginSubmitted = true
+  }
+
   for (const feature of features) {
     if (typeof feature.onMessage === 'function') {
       feature.onMessage(message)
