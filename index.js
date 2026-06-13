@@ -574,6 +574,11 @@ if (bot._client) {
       return
     }
 
+    if (meta.state === 'play' && (meta.name === 'set_title_subtitle' || meta.name === 'set_title_text')) {
+      handlePreSpawnJoinTitle(data && data.text)
+      return
+    }
+
     if (meta.name !== 'show_dialog') return
 
     const dialog = data && typeof data === 'object'
@@ -600,6 +605,7 @@ if (bot._client) {
 
 let chatReady = false
 let setupStarted = false
+let preSpawnJoinClickSent = false
 const SHOW_CHAT_LOGS = true
 const SHOW_VERBOSE_LOGS = false
 
@@ -646,6 +652,31 @@ async function performPostLoginAttack() {
   }
 
   logInfo('Skipped post-/login attack because swingArm is unavailable.')
+}
+
+function isPreSpawnJoinPrompt(text) {
+  return /单击左键以加入|左键.*加入|left[- ]?click.*join|click.*join/i.test(text)
+}
+
+function handlePreSpawnJoinTitle(titleText) {
+  if (setupStarted || preSpawnJoinClickSent) return
+
+  const text = extractDialogText(titleText)
+  if (!isPreSpawnJoinPrompt(text)) return
+
+  preSpawnJoinClickSent = true
+  logInfo(`Received join prompt${text ? `: ${text}` : ''}; sending left-click.`)
+
+  setTimeout(() => {
+    if (setupStarted || !bot._client || bot._client.state === 'end') return
+
+    if (typeof bot.swingArm === 'function') {
+      bot.swingArm('right')
+      return
+    }
+
+    bot._client.write('arm_animation', { hand: 0 })
+  }, 500)
 }
 
 async function runSpawnCommands() {
