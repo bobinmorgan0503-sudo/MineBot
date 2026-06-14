@@ -553,6 +553,14 @@ function pickDialogInputKey(inputs, preferredKeys, labelPattern) {
   return byLabel ? byLabel.key : ''
 }
 
+function pickTermsAcceptedInputKey(inputs) {
+  return pickDialogInputKey(
+    inputs,
+    ['terms_of_service', 'accept_terms', 'terms_accepted', 'agree_terms', 'tos'],
+    /服务条款|条款|同意|已阅读|terms|tos|agree|accept/i
+  )
+}
+
 function buildDialogResponseNbt(values) {
   const entries = {}
 
@@ -594,9 +602,12 @@ function buildAutoDialogResponseNbt(dialog, action) {
       /自动登录|auto.*login|ip/i
     )
 
+    const termsAcceptedKey = pickTermsAcceptedInputKey(inputs)
+
     const values = {}
     if (passwordKey) values[passwordKey] = password
     if (autoLoginKey) values[autoLoginKey] = true
+    if (termsAcceptedKey) values[termsAcceptedKey] = true
 
     if (Object.keys(values).length > 0) {
       return buildDialogResponseNbt(values)
@@ -615,9 +626,12 @@ function buildAutoDialogResponseNbt(dialog, action) {
       /确认|再次|confirm/i
     )
 
+    const termsAcceptedKey = pickTermsAcceptedInputKey(inputs)
+
     const values = {}
     if (passwordKey) values[passwordKey] = password
     if (confirmPasswordKey) values[confirmPasswordKey] = password
+    if (termsAcceptedKey) values[termsAcceptedKey] = true
 
     if (Object.keys(values).length > 0) {
       return buildDialogResponseNbt(values)

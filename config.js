@@ -683,7 +683,7 @@ const autoAttackConfig = {
 
   // 是否攻击被动生物。
   // 可选值：true | false
-  attackPassive: false,
+  attackPassive: true,
 
   // 实体列表模式。
   // 可选值：
