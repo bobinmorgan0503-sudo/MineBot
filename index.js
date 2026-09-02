@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const readline = require('readline')
 const dns = require('dns').promises
+const { spawn } = require('child_process')
 const mineflayer = require('mineflayer')
 const nbt = require('prismarine-nbt')
 const { SocksClient } = require('socks')
@@ -20,12 +21,24 @@ const { createInventoryFeature } = require('./features/inventory')
 const { createMakeuFeature } = require('./features/makeu')
 const { createNukerFeature } = require('./features/nuker')
 const { createAutoMineFeature } = require('./features/autoMine')
+const { createAutoFarmFeature } = require('./features/autoFarm')
 const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
 const { createAutoVerifyFeature } = require('./features/autoVerify')
 
-const CONFIG_FILE_PATH = path.join(__dirname, 'config.js')
-const CONFIG_BACKUP_DIR = path.join(__dirname, 'config-backups')
+// pkg 将应用代码放进只读快照。已打包时必须使用可执行文件同目录的配置，
+// 这样用户无需安装 Node.js 也能编辑配置，且配置备份能够正常写入磁盘。
+const APP_DIRECTORY = process.pkg ? path.dirname(process.execPath) : __dirname
+const CONFIG_FILE_PATH = path.join(APP_DIRECTORY, 'config.js')
+const CONFIG_BACKUP_DIR = path.join(APP_DIRECTORY, 'config-backups')
+
+function ensureRuntimeConfigFile() {
+  if (!process.pkg || fs.existsSync(CONFIG_FILE_PATH)) return
+
+  const bundledConfigPath = path.join(__dirname, 'config.js')
+  fs.copyFileSync(bundledConfigPath, CONFIG_FILE_PATH)
+  console.log(`Created editable configuration file: ${CONFIG_FILE_PATH}`)
+}
 
 function formatBackupTimestamp(date = new Date()) {
   const pad = (value, length = 2) => String(value).padStart(length, '0')
@@ -58,6 +71,7 @@ function backupConfigFile() {
 
 function loadRuntimeConfig() {
   try {
+    ensureRuntimeConfigFile()
     const resolvedConfigPath = require.resolve(CONFIG_FILE_PATH)
     delete require.cache[resolvedConfigPath]
     const loadedConfig = require(resolvedConfigPath)
@@ -78,6 +92,7 @@ const {
   makeuConfig,
   nukerConfig,
   autoMineConfig,
+  autoFarmConfig,
   autoVerifyConfig,
   protocolConfig,
   serverConfig,
@@ -419,16 +434,23 @@ function simplifyNbtValue(value) {
   }
 }
 
+function getPacketDialog(data) {
+  if (!data || typeof data !== 'object' || !data.dialog) return null
+
+  const rawDialog = data.dialog
+  return simplifyNbtValue(rawDialog.data || rawDialog)
+}
+
 function isRejectLikeText(text) {
   if (!text) return false
 
-  return /拒绝|不同意|取消|关闭|返回|deny|disagree|reject|cancel|close|back|no/i.test(text)
+  return /拒绝|不同意|取消|关闭|返回|上一页|下一页|deny|disagree|reject|cancel|close|back|previous|prev|next|\bno\b/i.test(text)
 }
 
 function isAcceptLikeText(text) {
   if (!text) return false
 
-  return /同意|接受|确认|继续|好的|允许|agree|accept|confirm|continue|proceed|allow|yes|ok/i.test(text)
+  return /同意|接受|确认|继续|好的|允许|已阅读|阅读|知道了|登录|注册|agree|accept|confirm|continue|proceed|allow|read|acknowledge|understand|login|register|yes|ok/i.test(text)
 }
 
 function collectDialogActionCandidates(dialog) {
@@ -437,12 +459,32 @@ function collectDialogActionCandidates(dialog) {
   const pushCandidate = (action, label, path) => {
     if (!action || typeof action !== 'object' || typeof action.id !== 'string') return
 
+    const duplicate = candidates.some((candidate) => candidate.id === action.id)
+    if (duplicate) return
+
     candidates.push({
       id: action.id,
       nbt: action.nbt ?? action.data ?? undefined,
       labelText: extractDialogText(label || action.label || action.tooltip),
       path
     })
+  }
+
+  const visit = (value, path, inheritedLabel, depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 8) return
+
+    const label = value.label || value.tooltip || value.title || inheritedLabel
+    pushCandidate(value.action || value.on_click || value, label, path)
+
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => visit(entry, `${path}[${index}]`, inheritedLabel, depth + 1))
+      return
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'nbt' || key === 'data') continue
+      visit(child, `${path}.${key}`, label, depth + 1)
+    }
   }
 
   if (!dialog || typeof dialog !== 'object') {
@@ -489,6 +531,8 @@ function collectDialogActionCandidates(dialog) {
       )
     }
   }
+
+  visit(dialog, 'dialog', undefined)
 
   return candidates
 }
@@ -575,7 +619,7 @@ function buildDialogResponseNbt(values) {
   }
 
   if (Object.keys(entries).length === 0) {
-    return { type: 'end', value: undefined }
+    return null
   }
 
   return nbt.comp(entries)
@@ -583,7 +627,7 @@ function buildDialogResponseNbt(values) {
 
 function buildAutoDialogResponseNbt(dialog, action) {
   if (!action || typeof action.id !== 'string') {
-    return { type: 'end', value: undefined }
+    return null
   }
 
   const inputs = collectDialogInputCandidates(dialog)
@@ -638,7 +682,7 @@ function buildAutoDialogResponseNbt(dialog, action) {
     }
   }
 
-  return action.nbt || { type: 'end', value: undefined }
+  return action.nbt || null
 }
 
 function getDialogTitle(dialog) {
@@ -702,14 +746,15 @@ if (bot._client) {
 
     if (meta.name !== 'show_dialog') return
 
-    const dialog = data && typeof data === 'object'
-      ? simplifyNbtValue(data.dialog)
-      : null
+    const dialog = getPacketDialog(data)
     const acceptAction = pickDialogAcceptAction(dialog)
 
     if (!acceptAction) {
       const dialogTitle = getDialogTitle(dialog)
       logInfo(`Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, but no accept action was recognized.`)
+      if (process.env.MINEBOT_DEBUG_DIALOG === '1') {
+        logInfo(JSON.stringify(dialog, null, 2).slice(0, 12000))
+      }
       return
     }
 
@@ -718,8 +763,11 @@ if (bot._client) {
       `Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, sending automatic accept action (${acceptAction.id}).`
     )
     const responseNbt = buildAutoDialogResponseNbt(dialog, acceptAction)
-    if (/loginpool:auth_login|auth_login/i.test(acceptAction.id) && responseNbt.type === 'compound') {
+    if (/loginpool:auth_login|auth_login/i.test(acceptAction.id) && responseNbt && responseNbt.type === 'compound') {
       dialogLoginSubmitted = true
+    }
+    if (/loginpool:notice_read|notice_read/i.test(acceptAction.id)) {
+      noticeReadSubmitted = true
     }
 
     bot._client.write('custom_click_action', {
@@ -733,8 +781,13 @@ let chatReady = false
 let setupStarted = false
 let preSpawnJoinClickSent = false
 let dialogLoginSubmitted = false
+let noticeReadSubmitted = false
+let lastKickReason = ''
+let relaunchScheduled = false
 const SHOW_CHAT_LOGS = true
 const SHOW_VERBOSE_LOGS = false
+const NOTICE_RECONNECT_DELAY_MS = 90000
+const MAX_NOTICE_RECONNECTS = 2
 
 function disconnectBot() {
   if (typeof bot.quit === 'function') {
@@ -771,6 +824,59 @@ function isLoginCommand(command) {
 
 function isAuthenticatedMessage(text) {
   return /\u5df2\u6210\u529f\u767b\u5f55|\u5df2\u5e2e\u4f60\u81ea\u52a8\u767b\u5f55|successfully logged in/i.test(text)
+}
+
+function isNoticeReconnectReason(text) {
+  return /连接出现问题|请重新连接|connection.*problem|reconnect/i.test(String(text || ''))
+}
+
+function getNoticeReconnectAttempt() {
+  const attempt = Number.parseInt(process.env.MINEBOT_NOTICE_RECONNECT_ATTEMPT || '0', 10)
+  return Number.isFinite(attempt) && attempt >= 0 ? attempt : 0
+}
+
+function scheduleProcessRelaunch(reason) {
+  if (relaunchScheduled) return true
+
+  const attempt = getNoticeReconnectAttempt()
+  if (attempt >= MAX_NOTICE_RECONNECTS) {
+    logInfo(`Skipped automatic reconnect after notice because attempt limit was reached (${attempt}).`)
+    return false
+  }
+
+  relaunchScheduled = true
+  const nextAttempt = attempt + 1
+  logInfo(
+    `Server requested reconnect after notice (${reason || 'unknown reason'}); ` +
+    `restarting in ${Math.round(NOTICE_RECONNECT_DELAY_MS / 1000)}s (attempt ${nextAttempt}/${MAX_NOTICE_RECONNECTS}).`
+  )
+
+  setTimeout(() => {
+    const child = spawn(process.execPath, process.argv.slice(1), {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MINEBOT_NOTICE_RECONNECT_ATTEMPT: String(nextAttempt)
+      },
+      stdio: 'inherit'
+    })
+
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      }
+
+      process.exit(code == null ? 0 : code)
+    })
+
+    child.on('error', (error) => {
+      console.error('Failed to restart after notice reconnect:', error.message)
+      process.exit(1)
+    })
+  }, NOTICE_RECONNECT_DELAY_MS)
+
+  return true
 }
 
 async function performPostLoginAttack() {
@@ -889,6 +995,12 @@ const features = [
     logInfo,
     sleep
   }),
+  createAutoFarmFeature({
+    bot,
+    config: autoFarmConfig,
+    logInfo,
+    sleep
+  }),
   createAutoVerifyFeature({
     bot,
     config: autoVerifyConfig,
@@ -921,6 +1033,12 @@ const terminal = readline.createInterface({
   output: process.stdout,
   prompt: '> '
 })
+let terminalClosed = false
+
+function promptTerminal() {
+  if (terminalClosed) return
+  terminal.prompt()
+}
 
 const originalConsoleLog = console.log.bind(console)
 const originalConsoleError = console.error.bind(console)
@@ -951,7 +1069,7 @@ terminal.on('line', async (line) => {
   const message = line.trim()
 
   if (!message) {
-    terminal.prompt()
+    promptTerminal()
     return
   }
 
@@ -968,23 +1086,24 @@ terminal.on('line', async (line) => {
 
   if (!chatReady) {
     logInfo('Bot is not ready for commands yet.')
-    terminal.prompt()
+    promptTerminal()
     return
   }
 
   for (const feature of features) {
     if (typeof feature.handleCommand === 'function' && await feature.handleCommand(message)) {
-      terminal.prompt()
+      promptTerminal()
       return
     }
   }
 
   bot.chat(message)
-  terminal.prompt()
+  promptTerminal()
 })
 
 terminal.on('close', () => {
-  if (bot._client && bot._client.state !== 'end') {
+  terminalClosed = true
+  if (process.stdin.isTTY && bot._client && bot._client.state !== 'end') {
     disconnectBot()
   }
 })
@@ -1002,7 +1121,7 @@ bot.once('spawn', () => {
     }
   }
   logInfo('Local command: /quit')
-  terminal.prompt()
+  promptTerminal()
 
   for (const feature of features) {
     if (typeof feature.onReady === 'function') {
@@ -1066,12 +1185,21 @@ bot.on('spawn', () => {
   }
 })
 
+bot.on('time', () => {
+  for (const feature of features) {
+    if (typeof feature.onTime === 'function') {
+      feature.onTime()
+    }
+  }
+})
+
 bot.on('kicked', (reason) => {
   chatReady = false
   for (const feature of features) {
     if (typeof feature.onDisconnect === 'function') feature.onDisconnect()
   }
   const formattedReason = formatStructuredReason(reason)
+  lastKickReason = formattedReason || String(reason || '')
   logInfo('Kicked:', formattedReason || reason)
 })
 
@@ -1082,6 +1210,9 @@ bot.on('end', (reason) => {
   }
   const formattedReason = formatStructuredReason(reason)
   logInfo('Disconnected from server.', formattedReason || '')
+  if (noticeReadSubmitted && isNoticeReconnectReason(lastKickReason) && scheduleProcessRelaunch(lastKickReason)) {
+    return
+  }
   terminal.close()
 })
 

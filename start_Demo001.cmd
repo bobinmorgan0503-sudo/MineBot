@@ -7,6 +7,6 @@ if "%BOT_HOST%"=="" set "BOT_HOST=4u4n.qiunaruto.top"
 if "%BOT_PORT%"=="" set "BOT_PORT=25565"
 if "%BOT_VERSION%"=="" set "BOT_VERSION=1.21.11"
 
-title MineBot - Arthas @ %BOT_HOST%:%BOT_PORT% (%BOT_VERSION%)
-npm start -- Arthas %BOT_HOST% %BOT_PORT% %BOT_VERSION%
+title MineBot - Demo001 @ %BOT_HOST%:%BOT_PORT% (%BOT_VERSION%)
+npm start -- Demo001 %BOT_HOST% %BOT_PORT% %BOT_VERSION%
 pause

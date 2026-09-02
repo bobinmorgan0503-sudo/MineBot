@@ -127,7 +127,7 @@ const spawnCommands = [
 const sieveConfig = {
   // 每轮筛矿循环的间隔。
   // 可选值：任意 > 0 的毫秒整数。
-  tickDelayMs: 20,
+  tickDelayMs: 30,
 
   // 等待容器界面打开的超时时间。
   // 可选值：任意 > 0 的毫秒整数。
@@ -135,19 +135,19 @@ const sieveConfig = {
 
   // 砂砾容器坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  gravelContainerPos: new Vec3(-11554600, 65, -2083144),
+  gravelContainerPos: new Vec3(-52965, 193, -1043567),
 
   // 活板门坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  trapdoorPos: new Vec3(-11554598, 66, -2083146),
+  trapdoorPos: new Vec3(-52963, 193, -1043569),
 
   // 第一个栅栏坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  fencePos1: new Vec3(-11554600, 66, -2083146),
+  fencePos1: new Vec3(-52962, 194, -1043567),
 
   // 第二个栅栏坐标。
   // 可选值：`new Vec3(x, y, z)`。
-  fencePos2: new Vec3(-11554599, 66, -2083147),
+  fencePos2: new Vec3(-52963, 194, -1043565),
 
   // 容器里要 shift-click 的砂砾槽位。
   // 可选值：任意 >= 0 的整数；通常从 0 开始。
@@ -626,6 +626,37 @@ const autoMineConfig = {
   }
 }
 
+// 自动农场配置。成熟作物会按距离收获；可补种作物会优先补种。
+const autoFarmConfig = {
+  // 是否在进服后自动启动。
+  enabled: false,
+  // -1 表示不自动启动；0 表示立即启动。
+  autoStartDelayMs: -1,
+  // 要处理的作物方块名。支持 wheat、carrots、potatoes、beetroots、
+  // nether_wart、cocoa、sweet_berry_bush、cave_vines、sugar_cane、
+  // cactus、bamboo、kelp、melon、pumpkin。
+  targetCrops: ['wheat', 'carrots', 'potatoes', 'beetroots', 'sugar_cane'],
+  // 原地操作范围（格）和每轮最大候选数；AutoFarm 不会寻路或移动。
+  searchRange: 6,
+  searchCount: 128,
+  // 一次搜索后最多连续处理多少个目标，避免每收获一格就重新扫描世界。
+  maxActionsPerCycle: 10,
+  // 收获后是否自动补种。缺少对应种子时只收获并记录提示。
+  replant: false,
+  // 操作前是否面向目标方块。
+  faceTarget: false,
+  // 是否发送主手挥动动画。faceTarget 与 swingHand 都关闭时，
+  // 挖掘收获只发送开始和完成挖掘数据包。
+  swingHand: false,
+  // 纯挖掘数据包模式下，开始与完成数据包之间的延迟。普通作物可设为 0；
+  // 西瓜和南瓜始终至少等待实际挖掘时间。
+  packetDigDelayMs: 0,
+  // 找不到作物时的等待时间、每次动作间隔，以及批次间隔（毫秒）。
+  idleDelayMs: 1000,
+  actionDelayMs: 0,
+  cycleDelayMs: 100
+}
+
 // 自动攻击配置。
 const autoAttackConfig = {
   // 是否启用自动攻击。
@@ -645,6 +676,10 @@ const autoAttackConfig = {
   // - 'multi'：范围内多个目标都会尝试处理
   mode: 'multi',
 
+  // multi 模式下每个攻击批次最多处理的目标数量。
+  // 可选值：任意 >= 1 的整数。
+  maxTargets: 10,
+
   // 单目标模式下的优先级。
   // 可选值：
   // - 'distance'：优先最近目标
@@ -657,13 +692,17 @@ const autoAttackConfig = {
     // 可选值：
     // - true：使用下面的 `value`
     // - false：按实时攻速属性 / 物品属性修饰器自动计算
-    custom: false,
+    custom: true,
 
-    // 自定义冷却秒数。
-    // 可选值：任意 >= 0 的数字，单位为秒。
+    // 自定义冷却刻数。
+    // 可选值：任意 >= 0 的数字，单位为刻（20 刻 = 1 秒）。
     // 只有 `custom: true` 时才会生效。
-    value: 1.0
+    value: 2
   },
+
+  // 是否尝试按服务端实际 TPS 同步攻击冷却。服务端 TPS 低于 20 时会延长间隔。
+  // 可选值：true | false
+  tpsSync: true,
 
   // 与实体交互方式。
   // 可选值：
@@ -673,9 +712,12 @@ const autoAttackConfig = {
   interaction: 'attack',
 
   // 攻击半径。
-  // 可选值：1.0 到 4.0 的数字。
-  // 超出范围会在运行时被自动钳制到 1.0 ~ 4.0。
-  attackRange: 5.0,
+  // 可选值：任意 >= 1.0 的数字；不再设置最大范围限制。
+  attackRange: 6.0,
+
+  // 攻击或交互前是否转向目标实体。
+  // 可选值：true | false
+  rotate: false,
 
   // 是否攻击敌对生物。
   // 可选值：true | false
@@ -702,7 +744,7 @@ const autoAttackConfig = {
 
   // 扫描附近实体的间隔。
   // 可选值：任意 >= 20 的毫秒整数；更小的值会被自动提升到内部默认值。
-  scanIntervalMs: 100
+  scanIntervalMs: 20
 }
 
 module.exports = {
@@ -715,6 +757,7 @@ module.exports = {
   nukerConfig,
   makeuConfig,
   autoMineConfig,
+  autoFarmConfig,
   autoVerifyConfig,
   protocolConfig,
   serverConfig,

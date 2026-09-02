@@ -138,6 +138,7 @@ const spawnCommands = [
 - `autoDigConfig`
 - `autoFishConfig`
 - `autoMineConfig`
+- `autoFarmConfig`
 - `autoVerifyConfig`
 - `sieveConfig`
 
@@ -148,6 +149,7 @@ const spawnCommands = [
 - `features/goto.js`：坐标导航
 - `features/autoDig.js`：自动挖掘
 - `features/autoMine.js`：自动挖矿
+- `features/autoFarm.js`：自动收获与补种
 - `features/autoFish.js`：自动钓鱼
 - `features/autoAttack.js`：自动攻击
 - `features/autoBack.js`：自动死亡返回

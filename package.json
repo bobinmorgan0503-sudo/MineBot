@@ -4,7 +4,10 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "package": "node tools/package.mjs",
+    "package:win": "node tools/package.mjs --platform win",
+    "package:linux": "node tools/package.mjs --platform linux"
   },
   "dependencies": {
     "mineflayer": "^4.35.0",

@@ -4,6 +4,8 @@ const DEFAULT_SCAN_INTERVAL_MS = 100
 const LEGACY_LIVING_HEALTH_METADATA_INDEX = 7
 const DEFAULT_MODERN_ATTACK_SPEED = 4
 const DEFAULT_PRE_COOLDOWN_ATTACK_INTERVAL_MS = 250
+const MINECRAFT_TICKS_PER_SECOND = 20
+const TPS_SAMPLE_WEIGHT = 0.2
 
 const ATTACK_SPEED_BY_ITEM_NAME = {
   wooden_sword: 1.6,
@@ -42,12 +44,16 @@ const ATTACK_SPEED_BY_ITEM_NAME = {
 function createAutoAttackFeature({
   bot,
   config,
+  logInfo,
   sleep
 }) {
   let enabled = false
   let runId = 0
   let autoStartTimer = null
   let lastActionAt = 0
+  let serverTps = null
+  let lastServerTick = null
+  let lastServerTickAt = null
 
   function clearAutoStartTimer() {
     if (!autoStartTimer) return
@@ -131,13 +137,56 @@ function createAutoAttackFeature({
   function getAttackRange() {
     const rawValue = Number(getConfigValue('attackRange', 'Attack_Range'))
     if (!Number.isFinite(rawValue)) return 4
-    return Math.max(1, Math.min(4, rawValue))
+    return Math.max(1, rawValue)
+  }
+
+  function shouldRotate() {
+    return Boolean(getConfigValue('rotate', 'Rotate'))
+  }
+
+  function getMaxTargets() {
+    const rawValue = Number(getConfigValue('maxTargets', 'maxtargets', 'Max_Targets'))
+    if (!Number.isFinite(rawValue)) return 5
+    return Math.max(1, Math.floor(rawValue))
   }
 
   function getScanIntervalMs() {
     const rawValue = Number(getConfigValue('scanIntervalMs', 'Scan_Interval_Ms'))
     if (!Number.isFinite(rawValue) || rawValue < 20) return DEFAULT_SCAN_INTERVAL_MS
     return rawValue
+  }
+
+  function shouldSyncWithTps() {
+    return Boolean(getConfigValue('tpsSync', 'TpsSync', 'TPSSync'))
+  }
+
+  function updateServerTps() {
+    const serverTick = Number(bot.time && bot.time.age)
+    const now = Date.now()
+
+    if (!Number.isFinite(serverTick)) return
+
+    if (lastServerTick != null && lastServerTickAt != null) {
+      const elapsedTicks = serverTick - lastServerTick
+      const elapsedMs = now - lastServerTickAt
+      if (elapsedTicks > 0 && elapsedMs > 0) {
+        const measuredTps = Math.min(MINECRAFT_TICKS_PER_SECOND, (elapsedTicks * 1000) / elapsedMs)
+        serverTps = Number.isFinite(serverTps)
+          ? serverTps + (measuredTps - serverTps) * TPS_SAMPLE_WEIGHT
+          : measuredTps
+      }
+    }
+
+    lastServerTick = serverTick
+    lastServerTickAt = now
+  }
+
+  function getTpsSyncedCooldownMs(cooldownMs) {
+    if (!shouldSyncWithTps() || !Number.isFinite(serverTps) || serverTps <= 0) {
+      return cooldownMs
+    }
+
+    return cooldownMs * (MINECRAFT_TICKS_PER_SECOND / serverTps)
   }
 
   function getConfiguredEntityNames() {
@@ -336,23 +385,23 @@ function createAutoAttackFeature({
     )
 
     if (customCooldown) {
-      const configuredSeconds = Number(
+      const configuredTicks = Number(
         cooldownConfig.value != null
           ? cooldownConfig.value
           : cooldownConfig.Value
       )
 
-      if (Number.isFinite(configuredSeconds) && configuredSeconds >= 0) {
-        return configuredSeconds * 1000
+      if (Number.isFinite(configuredTicks) && configuredTicks >= 0) {
+        return getTpsSyncedCooldownMs((configuredTicks * 1000) / MINECRAFT_TICKS_PER_SECOND)
       }
     }
 
     const attackSpeed = getCurrentAttackSpeed()
     if (!attackSpeed || attackSpeed <= 0) {
-      return DEFAULT_PRE_COOLDOWN_ATTACK_INTERVAL_MS
+      return getTpsSyncedCooldownMs(DEFAULT_PRE_COOLDOWN_ATTACK_INTERVAL_MS)
     }
 
-    return 1000 / attackSpeed
+    return getTpsSyncedCooldownMs(1000 / attackSpeed)
   }
 
   function getEntityCategory(entity) {
@@ -519,6 +568,7 @@ function createAutoAttackFeature({
   }
 
   async function aimAtEntity(entity) {
+    if (!shouldRotate()) return
     if (typeof bot.lookAt !== 'function') return
 
     try {
@@ -559,14 +609,16 @@ function createAutoAttackFeature({
       return
     }
 
-    const targets = getMode() === 'multi' ? candidates : [candidates[0]]
+    const targets = getMode() === 'multi'
+      ? candidates.slice(0, getMaxTargets())
+      : [candidates[0]]
+
+    // Cooldown applies to the whole attack batch. Waiting before every entity
+    // made multi mode behave exactly like single-target mode over time.
+    await waitForCooldown(currentRunId)
+    assertActive(currentRunId)
 
     for (const entity of targets) {
-      assertActive(currentRunId)
-
-      if (!isTargetCandidate(entity)) continue
-
-      await waitForCooldown(currentRunId)
       assertActive(currentRunId)
 
       if (!isTargetCandidate(entity)) continue
@@ -636,7 +688,7 @@ function createAutoAttackFeature({
         logInfo('Auto attack is stopped.')
       } else {
         logInfo(
-          `Auto attack is running. mode=${getMode()}, priority=${getPriority()}, interaction=${getInteraction()}, range=${getAttackRange()}, cooldown=${Math.round(getCooldownMs())}ms.`
+          `Auto attack is running. mode=${getMode()}, maxTargets=${getMaxTargets()}, priority=${getPriority()}, interaction=${getInteraction()}, range=${getAttackRange()}, rotate=${shouldRotate()}, tpsSync=${shouldSyncWithTps()}, cooldown=${Math.round(getCooldownMs())}ms.`
         )
       }
       return true
@@ -673,6 +725,9 @@ function createAutoAttackFeature({
     enabled = false
     runId += 1
     lastActionAt = 0
+    serverTps = null
+    lastServerTick = null
+    lastServerTickAt = null
   }
 
   async function stop() {
@@ -684,6 +739,7 @@ function createAutoAttackFeature({
     handleCommand,
     onDisconnect,
     onReady,
+    onTime: updateServerTps,
     stop
   }
 }
