@@ -2,7 +2,6 @@ const fs = require('fs')
 const path = require('path')
 const readline = require('readline')
 const dns = require('dns').promises
-const { spawn } = require('child_process')
 const mineflayer = require('mineflayer')
 const nbt = require('prismarine-nbt')
 const { SocksClient } = require('socks')
@@ -25,6 +24,7 @@ const { createAutoFarmFeature } = require('./features/autoFarm')
 const { createGotoFeature } = require('./features/goto')
 const { createSieveFeature } = require('./features/sieve')
 const { createAutoVerifyFeature } = require('./features/autoVerify')
+const { createAutoReconnect } = require('./features/autoReconnect')
 
 // pkg 将应用代码放进只读快照。已打包时必须使用可执行文件同目录的配置，
 // 这样用户无需安装 Node.js 也能编辑配置，且配置备份能够正常写入磁盘。
@@ -83,6 +83,7 @@ function loadRuntimeConfig() {
 }
 
 const {
+  autoReconnectConfig,
   antiAfkConfig,
   autoBackConfig,
   autoAttackConfig,
@@ -304,54 +305,61 @@ const botOptions = {
   }
 }
 
-if (proxyEnabled) {
-  botOptions.connect = (client) => {
-    void (async () => {
-      const destination = await resolveMinecraftDestination(runtimeServerConfig.host, runtimeServerConfig.port)
+function createBotOptions() {
+  const options = { ...botOptions, plugins: { ...botOptions.plugins } }
+  if (proxyEnabled) {
+    options.connect = (client) => {
+      void (async () => {
+        const destination = await resolveMinecraftDestination(runtimeServerConfig.host, runtimeServerConfig.port)
+        if (client.minebotConnectionCancelled) return
 
-      // Match minecraft-protocol's built-in SRV flow so proxy mode behaves the
-      // same as a normal direct connection for servers behind SRV records.
-      botOptions.host = destination.host
-      botOptions.port = destination.port
+        // Match minecraft-protocol's built-in SRV flow so proxy mode behaves the
+        // same as a normal direct connection for servers behind SRV records.
+        options.host = destination.host
+        options.port = destination.port
 
-      if (destination.host !== runtimeServerConfig.host || destination.port !== runtimeServerConfig.port) {
-        logInfo(
-          `Resolved Minecraft SRV target ${runtimeServerConfig.host}:${runtimeServerConfig.port} ` +
-          `-> ${destination.host}:${destination.port} for proxy connection.`
-        )
-      }
-
-      SocksClient.createConnection({
-        proxy: {
-          host: runtimeProxyConfig.host,
-          port: runtimeProxyConfig.port,
-          type: 5,
-          userId: runtimeProxyConfig.username || undefined,
-          password: runtimeProxyConfig.password || undefined
-        },
-        command: 'connect',
-        destination
-      }, (error, info) => {
-        if (error) {
-          client.emit('error', error)
-          return
+        if (destination.host !== runtimeServerConfig.host || destination.port !== runtimeServerConfig.port) {
+          logInfo(
+            `Resolved Minecraft SRV target ${runtimeServerConfig.host}:${runtimeServerConfig.port} ` +
+            `-> ${destination.host}:${destination.port} for proxy connection.`
+          )
         }
 
-        client.setSocket(info.socket)
-        client.emit('connect')
+        SocksClient.createConnection({
+          timeout: Number(autoReconnectConfig?.connectTimeoutMs) > 0 ? Number(autoReconnectConfig.connectTimeoutMs) : 60000,
+          proxy: {
+            host: runtimeProxyConfig.host,
+            port: runtimeProxyConfig.port,
+            type: 5,
+            userId: runtimeProxyConfig.username || undefined,
+            password: runtimeProxyConfig.password || undefined
+          },
+          command: 'connect',
+          destination
+        }, (error, info) => {
+          if (client.minebotConnectionCancelled) {
+            if (info?.socket) info.socket.destroy()
+            return
+          }
+          if (error) {
+            client.emit('error', error)
+            return
+          }
+
+          client.setSocket(info.socket)
+          client.emit('connect')
+        })
+      })().catch((error) => {
+        if (error && !client.minebotConnectionCancelled) {
+          client.emit('error', error)
+        }
       })
-    })().catch((error) => {
-      if (error) {
-        client.emit('error', error)
-      }
-    })
+    }
   }
+  return options
 }
 
-const bot = mineflayer.createBot(botOptions)
-bot.loadPlugin(pathfinder)
-
-function sanitizeWorldParticlesPacket(packet) {
+function sanitizeWorldParticlesPacket(bot, packet) {
   if (!packet || typeof packet !== 'object') return
 
   const usesUpdatedParticlesPacket = typeof bot.supportFeature === 'function' &&
@@ -716,94 +724,8 @@ function formatStructuredReason(reason) {
   }
 }
 
-if (bot._client) {
-  bot._client.prependListener('world_particles', sanitizeWorldParticlesPacket)
-}
-
-if (bot._client) {
-  bot._client.on('packet', (data, meta) => {
-    if (!meta) return
-
-    if (meta.state === 'configuration' && meta.name === 'add_resource_pack') {
-      logVerbose(`Received resource pack request: ${data.uuid}`)
-      bot._client.write('resource_pack_receive', {
-        uuid: data.uuid,
-        result: 1
-      })
-      return
-    }
-
-    if (meta.state === 'configuration' && meta.name === 'code_of_conduct') {
-      logInfo('Received code of conduct prompt, accepting automatically.')
-      bot._client.write('accept_code_of_conduct', {})
-      return
-    }
-
-    if (meta.state === 'play' && (meta.name === 'set_title_subtitle' || meta.name === 'set_title_text')) {
-      handlePreSpawnJoinTitle(data && data.text)
-      return
-    }
-
-    if (meta.name !== 'show_dialog') return
-
-    const dialog = getPacketDialog(data)
-    const acceptAction = pickDialogAcceptAction(dialog)
-
-    if (!acceptAction) {
-      const dialogTitle = getDialogTitle(dialog)
-      logInfo(`Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, but no accept action was recognized.`)
-      if (process.env.MINEBOT_DEBUG_DIALOG === '1') {
-        logInfo(JSON.stringify(dialog, null, 2).slice(0, 12000))
-      }
-      return
-    }
-
-    const dialogTitle = getDialogTitle(dialog)
-    logInfo(
-      `Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, sending automatic accept action (${acceptAction.id}).`
-    )
-    const responseNbt = buildAutoDialogResponseNbt(dialog, acceptAction)
-    if (/loginpool:auth_login|auth_login/i.test(acceptAction.id) && responseNbt && responseNbt.type === 'compound') {
-      dialogLoginSubmitted = true
-    }
-    if (/loginpool:notice_read|notice_read/i.test(acceptAction.id)) {
-      noticeReadSubmitted = true
-    }
-
-    bot._client.write('custom_click_action', {
-      id: acceptAction.id,
-      nbt: responseNbt
-    })
-  })
-}
-
-let chatReady = false
-let setupStarted = false
-let preSpawnJoinClickSent = false
-let dialogLoginSubmitted = false
-let noticeReadSubmitted = false
-let lastKickReason = ''
-let relaunchScheduled = false
 const SHOW_CHAT_LOGS = true
 const SHOW_VERBOSE_LOGS = false
-const NOTICE_RECONNECT_DELAY_MS = 90000
-const MAX_NOTICE_RECONNECTS = 2
-
-function disconnectBot() {
-  if (typeof bot.quit === 'function') {
-    bot.quit()
-    return
-  }
-
-  if (typeof bot.end === 'function') {
-    bot.end()
-    return
-  }
-
-  if (bot._client && typeof bot._client.end === 'function') {
-    bot._client.end()
-  }
-}
 
 function logInfo(...args) {
   if (args.length === 0) return
@@ -814,219 +736,423 @@ function logVerbose(...args) {
   if (SHOW_VERBOSE_LOGS) console.log(...args)
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+function createBotSession() {
+  // Fresh options prevent a previous SRV resolution from leaking into this attempt.
+  const bot = mineflayer.createBot(createBotOptions())
+  bot.loadPlugin(pathfinder)
+  let chatReady = false
+  let setupStarted = false
+  let preSpawnJoinClickSent = false
+  let dialogLoginSubmitted = false
+  let noticeReadSubmitted = false
+  let lastKickReason = ''
+  let sessionEnded = false
+  const pendingSleeps = new Map()
 
-function isLoginCommand(command) {
-  return /^\/login(?:\s|$)/i.test(command)
-}
-
-function isAuthenticatedMessage(text) {
-  return /\u5df2\u6210\u529f\u767b\u5f55|\u5df2\u5e2e\u4f60\u81ea\u52a8\u767b\u5f55|successfully logged in/i.test(text)
-}
-
-function isNoticeReconnectReason(text) {
-  return /连接出现问题|请重新连接|connection.*problem|reconnect/i.test(String(text || ''))
-}
-
-function getNoticeReconnectAttempt() {
-  const attempt = Number.parseInt(process.env.MINEBOT_NOTICE_RECONNECT_ATTEMPT || '0', 10)
-  return Number.isFinite(attempt) && attempt >= 0 ? attempt : 0
-}
-
-function scheduleProcessRelaunch(reason) {
-  if (relaunchScheduled) return true
-
-  const attempt = getNoticeReconnectAttempt()
-  if (attempt >= MAX_NOTICE_RECONNECTS) {
-    logInfo(`Skipped automatic reconnect after notice because attempt limit was reached (${attempt}).`)
-    return false
+  if (bot._client) {
+    bot._client.prependListener('world_particles', (packet) => sanitizeWorldParticlesPacket(bot, packet))
   }
 
-  relaunchScheduled = true
-  const nextAttempt = attempt + 1
-  logInfo(
-    `Server requested reconnect after notice (${reason || 'unknown reason'}); ` +
-    `restarting in ${Math.round(NOTICE_RECONNECT_DELAY_MS / 1000)}s (attempt ${nextAttempt}/${MAX_NOTICE_RECONNECTS}).`
-  )
+  if (bot._client) {
+    bot._client.on('packet', (data, meta) => {
+      if (sessionEnded || !meta) return
 
-  setTimeout(() => {
-    const child = spawn(process.execPath, process.argv.slice(1), {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        MINEBOT_NOTICE_RECONNECT_ATTEMPT: String(nextAttempt)
-      },
-      stdio: 'inherit'
-    })
-
-    child.on('exit', (code, signal) => {
-      if (signal) {
-        process.kill(process.pid, signal)
+      if (meta.state === 'configuration' && meta.name === 'add_resource_pack') {
+        logVerbose(`Received resource pack request: ${data.uuid}`)
+        bot._client.write('resource_pack_receive', {
+          uuid: data.uuid,
+          result: 1
+        })
         return
       }
 
-      process.exit(code == null ? 0 : code)
+      if (meta.state === 'configuration' && meta.name === 'code_of_conduct') {
+        logInfo('Received code of conduct prompt, accepting automatically.')
+        bot._client.write('accept_code_of_conduct', {})
+        return
+      }
+
+      if (meta.state === 'play' && (meta.name === 'set_title_subtitle' || meta.name === 'set_title_text')) {
+        handlePreSpawnJoinTitle(data && data.text)
+        return
+      }
+
+      if (meta.name !== 'show_dialog') return
+
+      const dialog = getPacketDialog(data)
+      const acceptAction = pickDialogAcceptAction(dialog)
+
+      if (!acceptAction) {
+        const dialogTitle = getDialogTitle(dialog)
+        logInfo(`Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, but no accept action was recognized.`)
+        if (process.env.MINEBOT_DEBUG_DIALOG === '1') {
+          logInfo(JSON.stringify(dialog, null, 2).slice(0, 12000))
+        }
+        return
+      }
+
+      const dialogTitle = getDialogTitle(dialog)
+      logInfo(
+        `Received dialog${dialogTitle ? `: ${dialogTitle}` : ''}, sending automatic accept action (${acceptAction.id}).`
+      )
+      const responseNbt = buildAutoDialogResponseNbt(dialog, acceptAction)
+      if (/loginpool:auth_login|auth_login/i.test(acceptAction.id) && responseNbt && responseNbt.type === 'compound') {
+        dialogLoginSubmitted = true
+      }
+      if (/loginpool:notice_read|notice_read/i.test(acceptAction.id)) {
+        noticeReadSubmitted = true
+      }
+
+      bot._client.write('custom_click_action', {
+        id: acceptAction.id,
+        nbt: responseNbt
+      })
     })
-
-    child.on('error', (error) => {
-      console.error('Failed to restart after notice reconnect:', error.message)
-      process.exit(1)
-    })
-  }, NOTICE_RECONNECT_DELAY_MS)
-
-  return true
-}
-
-async function performPostLoginAttack() {
-  await sleep(1000)
-
-  if (typeof bot.swingArm === 'function') {
-    bot.swingArm('right')
-    logInfo('Performed one left-click swing after /login.')
-    return
   }
 
-  logInfo('Skipped post-/login attack because swingArm is unavailable.')
-}
-
-function isPreSpawnJoinPrompt(text) {
-  return /单击左键以加入|左键.*加入|left[- ]?click.*join|click.*join/i.test(text)
-}
-
-function handlePreSpawnJoinTitle(titleText) {
-  if (setupStarted || preSpawnJoinClickSent) return
-
-  const text = extractDialogText(titleText)
-  if (!isPreSpawnJoinPrompt(text)) return
-
-  preSpawnJoinClickSent = true
-  logInfo(`Received join prompt${text ? `: ${text}` : ''}; sending left-click.`)
-
-  setTimeout(() => {
-    if (setupStarted || !bot._client || bot._client.state === 'end') return
-
-    if (typeof bot.swingArm === 'function') {
-      bot.swingArm('right')
+  function disconnectBot() {
+    if (bot._client) bot._client.minebotConnectionCancelled = true
+    if (typeof bot.quit === 'function') {
+      bot.quit()
       return
     }
 
-    bot._client.write('arm_animation', { hand: 0 })
-  }, 500)
-}
-
-async function runSpawnCommands() {
-  const commands = Array.isArray(spawnCommands)
-    ? spawnCommands.map((command) => String(command).trim()).filter(Boolean)
-    : []
-
-  if (commands.length === 0) return
-
-  const perCommandDelayMs = Number(timingConfig.perCommandDelayMs || 1000)
-  for (const command of commands) {
-    if (dialogLoginSubmitted && isLoginCommand(command)) {
-      logInfo(`Skipped ${command} because dialog login was already submitted.`)
-      continue
+    if (typeof bot.end === 'function') {
+      bot.end()
+      return
     }
 
-    await sleep(perCommandDelayMs)
-    bot.chat(command)
-    logInfo(`Sent: ${command}`)
+    if (bot._client && typeof bot._client.end === 'function') {
+      bot._client.end()
+    }
+  }
 
-    if (isLoginCommand(command)) {
-      await performPostLoginAttack()
+  function sleep(ms) {
+    if (sessionEnded) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingSleeps.delete(timer)
+        resolve()
+      }, ms)
+      pendingSleeps.set(timer, resolve)
+    })
+  }
+
+  function isLoginCommand(command) {
+    return /^\/login(?:\s|$)/i.test(command)
+  }
+
+  function isAuthenticatedMessage(text) {
+    return /\u5df2\u6210\u529f\u767b\u5f55|\u5df2\u5e2e\u4f60\u81ea\u52a8\u767b\u5f55|successfully logged in/i.test(text)
+  }
+
+  function isNoticeReconnectReason(text) {
+    return /连接出现问题|请重新连接|connection.*problem|reconnect/i.test(String(text || ''))
+  }
+
+  async function performPostLoginAttack() {
+    await sleep(1000)
+    if (sessionEnded || !chatReady) return
+
+    if (typeof bot.swingArm === 'function') {
+      bot.swingArm('right')
+      logInfo('Performed one left-click swing after /login.')
+      return
+    }
+
+    logInfo('Skipped post-/login attack because swingArm is unavailable.')
+  }
+
+  function isPreSpawnJoinPrompt(text) {
+    return /单击左键以加入|左键.*加入|left[- ]?click.*join|click.*join/i.test(text)
+  }
+
+  function handlePreSpawnJoinTitle(titleText) {
+    if (sessionEnded || setupStarted || preSpawnJoinClickSent) return
+
+    const text = extractDialogText(titleText)
+    if (!isPreSpawnJoinPrompt(text)) return
+
+    preSpawnJoinClickSent = true
+    logInfo(`Received join prompt${text ? `: ${text}` : ''}; sending left-click.`)
+
+    void sleep(500).then(() => {
+      if (sessionEnded || setupStarted || !bot._client || bot._client.state === 'end') return
+
+      if (typeof bot.swingArm === 'function') {
+        bot.swingArm('right')
+        return
+      }
+
+      bot._client.write('arm_animation', { hand: 0 })
+    })
+  }
+
+  async function runSpawnCommands() {
+    const commands = Array.isArray(spawnCommands)
+      ? spawnCommands.map((command) => String(command).trim()).filter(Boolean)
+      : []
+
+    if (commands.length === 0) return
+
+    const perCommandDelayMs = Number(timingConfig.perCommandDelayMs || 1000)
+    for (const command of commands) {
+      if (sessionEnded || !chatReady) return
+      if (dialogLoginSubmitted && isLoginCommand(command)) {
+        logInfo(`Skipped ${command} because dialog login was already submitted.`)
+        continue
+      }
+
+      await sleep(perCommandDelayMs)
+      if (sessionEnded || !chatReady) return
+      if (dialogLoginSubmitted && isLoginCommand(command)) continue
+      bot.chat(command)
+      logInfo(`Sent: ${command}`)
+
+      if (isLoginCommand(command)) {
+        await performPostLoginAttack()
+      }
+    }
+  }
+
+  const features = [
+    createGotoFeature({
+      bot,
+      GoalBlock,
+      Movements,
+      logInfo
+    }),
+    createAntiAfkFeature({
+      bot,
+      config: antiAfkConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoBackFeature({
+      bot,
+      config: autoBackConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoAttackFeature({
+      bot,
+      config: autoAttackConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoDigFeature({
+      bot,
+      config: autoDigConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoDropFeature({
+      bot,
+      config: autoDropConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoFishFeature({
+      bot,
+      config: autoFishConfig,
+      logInfo,
+      sleep
+    }),
+    createInventoryFeature({
+      bot,
+      logInfo
+    }),
+    createAutoMineFeature({
+      bot,
+      config: autoMineConfig,
+      GoalGetToBlock,
+      Movements,
+      logInfo,
+      sleep
+    }),
+    createAutoFarmFeature({
+      bot,
+      config: autoFarmConfig,
+      logInfo,
+      sleep
+    }),
+    createAutoVerifyFeature({
+      bot,
+      config: autoVerifyConfig,
+      logInfo
+    }),
+    createNukerFeature({
+      bot,
+      config: nukerConfig,
+      logInfo,
+      sleep
+    }),
+    createSieveFeature({
+      bot,
+      config: sieveConfig,
+      logInfo,
+      logVerbose,
+      sleep
+    }),
+    createMakeuFeature({
+      bot,
+      config: makeuConfig,
+      logInfo,
+      logVerbose,
+      sleep
+    })
+  ]
+
+  bot.once('spawn', () => {
+    if (sessionEnded || setupStarted) return
+    setupStarted = true
+    chatReady = true
+
+    logInfo('Joined server.')
+    for (const feature of features) {
+      if (typeof feature.getCommandHelp !== 'function') continue
+      for (const line of feature.getCommandHelp()) {
+        logInfo(line)
+      }
+    }
+    logInfo('Local command: /reconnect')
+    logInfo('Local command: /quit')
+    promptTerminal()
+
+    for (const feature of features) {
+      if (typeof feature.onReady === 'function') {
+        feature.onReady()
+      }
+    }
+
+    void runSpawnCommands().catch((error) => {
+      console.error('Failed to run spawn commands:', error.message)
+    })
+  })
+
+  bot.on('connect', () => {
+    if (sessionEnded) {
+      disconnectBot()
+      if (bot._client?.socket) bot._client.socket.destroy()
+      return
+    }
+    const proxySuffix = proxyEnabled
+      ? ` via SOCKS5 ${runtimeProxyConfig.host}:${runtimeProxyConfig.port}`
+      : ''
+    logInfo(
+      `TCP connected as ${runtimeServerConfig.username} ` +
+      `to ${runtimeServerConfig.host}:${runtimeServerConfig.port}${proxySuffix}, waiting for login...`
+    )
+  })
+
+  bot.on('login', () => {
+    if (sessionEnded) return
+    logInfo('Login packet sent to server.')
+  })
+
+  bot.on('message', (message) => {
+    if (sessionEnded) return
+    if (isAuthenticatedMessage(String(message))) {
+      dialogLoginSubmitted = true
+    }
+
+    for (const feature of features) {
+      if (typeof feature.onMessage === 'function') {
+        feature.onMessage(message)
+      }
+    }
+
+    if (!SHOW_CHAT_LOGS) return
+
+    if (message && typeof message.toAnsi === 'function') {
+      logInfo(message.toAnsi())
+      return
+    }
+
+    logInfo(String(message))
+  })
+
+  bot.on('death', () => {
+    if (sessionEnded) return
+    for (const feature of features) {
+      if (typeof feature.onDeath === 'function') {
+        feature.onDeath()
+      }
+    }
+  })
+
+  bot.on('spawn', () => {
+    if (sessionEnded) return
+    for (const feature of features) {
+      if (typeof feature.onSpawn === 'function') {
+        feature.onSpawn()
+      }
+    }
+  })
+
+  bot.on('time', () => {
+    if (sessionEnded) return
+    for (const feature of features) {
+      if (typeof feature.onTime === 'function') {
+        feature.onTime()
+      }
+    }
+  })
+
+  bot.on('kicked', (reason) => {
+    const formattedReason = formatStructuredReason(reason)
+    lastKickReason = formattedReason || String(reason || '')
+    logInfo('Kicked:', formattedReason || reason)
+    cleanupSession()
+  })
+
+  bot.on('end', (reason) => {
+    cleanupSession()
+    const formattedReason = formatStructuredReason(reason)
+    logInfo('Disconnected from server.', formattedReason || '')
+  })
+
+  bot.on('error', (error) => {
+    console.error('Bot error:', error)
+  })
+
+  function cleanupSession() {
+    if (sessionEnded) return
+    sessionEnded = true
+    chatReady = false
+    for (const feature of features) {
+      if (typeof feature.onDisconnect !== 'function') continue
+      try {
+        Promise.resolve(feature.onDisconnect()).catch((error) => {
+          console.error('Feature disconnect cleanup failed:', error.message)
+        })
+      } catch (error) {
+        console.error('Feature disconnect cleanup failed:', error.message)
+      }
+    }
+    for (const [timer, resolve] of pendingSleeps) {
+      clearTimeout(timer)
+      resolve()
+    }
+    pendingSleeps.clear()
+  }
+
+  return {
+    bot,
+    features,
+    isReady: () => chatReady,
+    shouldDelayReconnect: () => noticeReadSubmitted && isNoticeReconnectReason(lastKickReason),
+    close() {
+      cleanupSession()
+      try {
+        disconnectBot()
+      } finally {
+        if (bot._client?.socket) bot._client.socket.destroy()
+        clearTimeout(bot._client?.closeTimer)
+      }
     }
   }
 }
-
-const features = [
-  createGotoFeature({
-    bot,
-    GoalBlock,
-    Movements,
-    logInfo
-  }),
-  createAntiAfkFeature({
-    bot,
-    config: antiAfkConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoBackFeature({
-    bot,
-    config: autoBackConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoAttackFeature({
-    bot,
-    config: autoAttackConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoDigFeature({
-    bot,
-    config: autoDigConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoDropFeature({
-    bot,
-    config: autoDropConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoFishFeature({
-    bot,
-    config: autoFishConfig,
-    logInfo,
-    sleep
-  }),
-  createInventoryFeature({
-    bot,
-    logInfo
-  }),
-  createAutoMineFeature({
-    bot,
-    config: autoMineConfig,
-    GoalGetToBlock,
-    Movements,
-    logInfo,
-    sleep
-  }),
-  createAutoFarmFeature({
-    bot,
-    config: autoFarmConfig,
-    logInfo,
-    sleep
-  }),
-  createAutoVerifyFeature({
-    bot,
-    config: autoVerifyConfig,
-    logInfo
-  }),
-  createNukerFeature({
-    bot,
-    config: nukerConfig,
-    logInfo,
-    sleep
-  }),
-  createSieveFeature({
-    bot,
-    config: sieveConfig,
-    logInfo,
-    logVerbose,
-    sleep
-  }),
-  createMakeuFeature({
-    bot,
-    config: makeuConfig,
-    logInfo,
-    logVerbose,
-    sleep
-  })
-]
 
 const terminal = readline.createInterface({
   input: process.stdin,
@@ -1034,6 +1160,15 @@ const terminal = readline.createInterface({
   prompt: '> '
 })
 let terminalClosed = false
+const autoReconnect = createAutoReconnect({
+  connect: createBotSession,
+  config: autoReconnectConfig,
+  logInfo,
+  onStopped: () => {
+    terminal.close()
+    process.stdin.unref?.()
+  }
+})
 
 function promptTerminal() {
   if (terminalClosed) return
@@ -1044,7 +1179,7 @@ const originalConsoleLog = console.log.bind(console)
 const originalConsoleError = console.error.bind(console)
 
 function writePreservingInput(writeFn, args) {
-  const hasActiveInput = Boolean(chatReady && terminal && terminal.input && terminal.input.isTTY)
+  const hasActiveInput = Boolean(autoReconnect.getSession()?.isReady() && !terminalClosed && terminal.input.isTTY)
 
   if (!hasActiveInput) {
     writeFn(...args)
@@ -1074,148 +1209,50 @@ terminal.on('line', async (line) => {
   }
 
   if (message === '/quit' || message === '/exit') {
-    await Promise.all(features.map(async (feature) => {
-      if (typeof feature.stop === 'function') {
-        await feature.stop()
-      }
-    }))
-    terminal.close()
-    disconnectBot()
+    shutdown()
     return
   }
 
-  if (!chatReady) {
+  if (/^\/reconnect(?:\s|$)/i.test(message)) {
+    if (message.toLowerCase() === '/reconnect') {
+      autoReconnect.reconnect()
+    } else {
+      logInfo('Usage: /reconnect')
+    }
+    promptTerminal()
+    return
+  }
+
+  const session = autoReconnect.getSession()
+  if (!session?.isReady()) {
     logInfo('Bot is not ready for commands yet.')
     promptTerminal()
     return
   }
 
-  for (const feature of features) {
+  for (const feature of session.features) {
     if (typeof feature.handleCommand === 'function' && await feature.handleCommand(message)) {
       promptTerminal()
       return
     }
   }
 
-  bot.chat(message)
+  if (autoReconnect.getSession() === session && session.isReady()) session.bot.chat(message)
   promptTerminal()
 })
 
 terminal.on('close', () => {
   terminalClosed = true
-  if (process.stdin.isTTY && bot._client && bot._client.state !== 'end') {
-    disconnectBot()
-  }
+  if (process.stdin.isTTY) autoReconnect.stop()
 })
 
-bot.once('spawn', () => {
-  if (setupStarted) return
-  setupStarted = true
-  chatReady = true
+function shutdown() {
+  autoReconnect.stop()
+  process.exit(0)
+}
 
-  logInfo('Joined server.')
-  for (const feature of features) {
-    if (typeof feature.getCommandHelp !== 'function') continue
-    for (const line of feature.getCommandHelp()) {
-      logInfo(line)
-    }
-  }
-  logInfo('Local command: /quit')
-  promptTerminal()
+terminal.on('SIGINT', shutdown)
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
 
-  for (const feature of features) {
-    if (typeof feature.onReady === 'function') {
-      feature.onReady()
-    }
-  }
-
-  void runSpawnCommands().catch((error) => {
-    console.error('Failed to run spawn commands:', error.message)
-  })
-})
-
-bot.on('connect', () => {
-  const proxySuffix = proxyEnabled
-    ? ` via SOCKS5 ${runtimeProxyConfig.host}:${runtimeProxyConfig.port}`
-    : ''
-  logInfo(
-    `TCP connected as ${runtimeServerConfig.username} ` +
-    `to ${runtimeServerConfig.host}:${runtimeServerConfig.port}${proxySuffix}, waiting for login...`
-  )
-})
-
-bot.on('login', () => {
-  logInfo('Login packet sent to server.')
-})
-
-bot.on('message', (message) => {
-  if (isAuthenticatedMessage(String(message))) {
-    dialogLoginSubmitted = true
-  }
-
-  for (const feature of features) {
-    if (typeof feature.onMessage === 'function') {
-      feature.onMessage(message)
-    }
-  }
-
-  if (!SHOW_CHAT_LOGS) return
-
-  if (message && typeof message.toAnsi === 'function') {
-    logInfo(message.toAnsi())
-    return
-  }
-
-  logInfo(String(message))
-})
-
-bot.on('death', () => {
-  for (const feature of features) {
-    if (typeof feature.onDeath === 'function') {
-      feature.onDeath()
-    }
-  }
-})
-
-bot.on('spawn', () => {
-  for (const feature of features) {
-    if (typeof feature.onSpawn === 'function') {
-      feature.onSpawn()
-    }
-  }
-})
-
-bot.on('time', () => {
-  for (const feature of features) {
-    if (typeof feature.onTime === 'function') {
-      feature.onTime()
-    }
-  }
-})
-
-bot.on('kicked', (reason) => {
-  chatReady = false
-  for (const feature of features) {
-    if (typeof feature.onDisconnect === 'function') feature.onDisconnect()
-  }
-  const formattedReason = formatStructuredReason(reason)
-  lastKickReason = formattedReason || String(reason || '')
-  logInfo('Kicked:', formattedReason || reason)
-})
-
-bot.on('end', (reason) => {
-  chatReady = false
-  for (const feature of features) {
-    if (typeof feature.onDisconnect === 'function') feature.onDisconnect()
-  }
-  const formattedReason = formatStructuredReason(reason)
-  logInfo('Disconnected from server.', formattedReason || '')
-  if (noticeReadSubmitted && isNoticeReconnectReason(lastKickReason) && scheduleProcessRelaunch(lastKickReason)) {
-    return
-  }
-  terminal.close()
-})
-
-bot.on('error', (error) => {
-  console.error('Bot error:', error)
-})
+autoReconnect.start()

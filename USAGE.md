@@ -73,6 +73,8 @@ chmod +x MineBot start.sh
 
 `config.js` 是运行时配置，必须保留在可执行文件旁边。主程序启动时会在同目录创建 `config-backups/`，其中保存最近一次和带时间戳的配置备份；这两个目录都应具有写权限。
 
+`autoReconnectConfig` 默认开启断线自动重连，并在每次重连后重新执行登录流程和 `spawnCommands`。可调整 `initialDelayMs`（首次等待）、`maxDelayMs`（退避上限）、`backoffMultiplier`（间隔倍率）、`connectTimeoutMs`（进服超时）、`stableConnectionMs`（失败计数重置时间）和 `noticeDelayMs`（公告后的重连等待），时间单位为毫秒。关闭时设置 `enabled: false`；修改配置后重启程序生效。使用 `/quit`、`/exit` 或 Ctrl+C 可停止机器人及自动重连。
+
 坐标配置沿用 `new Vec3(x, y, z)`，例如：
 
 ```js
@@ -115,6 +117,7 @@ SOCKS5 示例：
 /autosieve start|stop
 /useblock [x,y,z]
 /quit
+/reconnect             # 立即重连并重新登录；等待重试或尚未进服时也可使用
 ```
 
 其他输入会按普通聊天消息发到服务器。

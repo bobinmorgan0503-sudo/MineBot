@@ -34,6 +34,25 @@ const serverConfig = {
   auth: 'offline'
 }
 
+// 自动重连配置。断线、被踢出或连接失败后重新连接，并重新执行登录流程。
+const autoReconnectConfig = {
+  // false：关闭自动重连，仍可使用 /reconnect 手动重连。
+  // /quit、/exit 和 Ctrl+C 始终停止重连。
+  enabled: true,
+  // 首次重试前的等待时间（毫秒，> 0）。
+  initialDelayMs: 5000,
+  // 连续失败时的等待时间上限（毫秒，>= initialDelayMs）。
+  maxDelayMs: 60000,
+  // 连续失败时的间隔倍率（>= 1）；1 表示固定间隔。
+  backoffMultiplier: 2,
+  // 从创建连接到首次进入游戏的超时（毫秒，> 0），超时后重试。
+  connectTimeoutMs: 60000,
+  // 进入游戏后稳定在线多久才重置失败计数（毫秒，>= 0）。
+  stableConnectionMs: 30000,
+  // 阅读公告后服务器要求重新连接时，至少等待多久（毫秒，> 0）。
+  noticeDelayMs: 90000
+}
+
 // 异常粒子包兼容补丁。
 // 某些服务器发出的粒子包与当前协议栈不完全兼容，会导致入服时报错或掉线。
 // 这里将 `world_particles` 重定向到自定义的原始缓冲区类型，直接跳过解析。
@@ -748,6 +767,7 @@ const autoAttackConfig = {
 }
 
 module.exports = {
+  autoReconnectConfig,
   antiAfkConfig,
   autoBackConfig,
   autoAttackConfig,

@@ -10,6 +10,8 @@ function createAntiAfkFeature({
   let timer = null
 
   function stopAllMovement() {
+    // A failed TCP connection may end before mineflayer injects its plugins.
+    if (typeof bot.setControlState !== 'function') return
     bot.setControlState('forward', false)
     bot.setControlState('back', false)
     bot.setControlState('left', false)
